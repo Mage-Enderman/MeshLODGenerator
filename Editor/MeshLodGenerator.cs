@@ -1055,8 +1055,8 @@ namespace MeshLODGenerator
                         subBoneB.Add(soup.BoneB[sIdx]);
                         subWeightA.Add(soup.WeightA[sIdx]);
                         subHidden.Add(hiddenFlags.Count > sIdx ? hiddenFlags[sIdx] : (byte)0);
-                        if (soup.UVs.Count > sIdx) subUVs.Add(soup.UVs[sIdx]);
-                        if (soup.Normals.Count > sIdx) subNormals.Add(soup.Normals[sIdx]);
+                        subUVs.Add(sIdx < soup.UVs.Count ? soup.UVs[sIdx] : Vector2.zero);
+                        subNormals.Add(sIdx < soup.Normals.Count ? soup.Normals[sIdx] : Vector3.up);
                         subLocked.Add(isBoundary[sIdx]);
                     }
                     subIndices.Add(subIdx);
@@ -1089,7 +1089,7 @@ namespace MeshLODGenerator
                 simpLocked[m] = subLocked;
             }
 
-            // Re-merging all groups
+            // Re-merging all groups: preserve each material's distinct UVs and vertices
             soup.Positions.Clear();
             soup.BoneA.Clear();
             soup.BoneB.Clear();
@@ -1101,9 +1101,6 @@ namespace MeshLODGenerator
             hiddenFlags.Clear();
 
             List<int[]> submeshTrisList = new List<int[]>();
-            float weldDist = Mathf.Max(settings.SymmetryTolerance * 0.5f, 1e-5f);
-            float invWeldDist = 1f / weldDist;
-            Dictionary<Vector3Int, int> boundaryWeld = new Dictionary<Vector3Int, int>();
 
             for (int m = 0; m < matCount; m++)
             {
@@ -1121,55 +1118,25 @@ namespace MeshLODGenerator
                 var hidList = simpHidden[m];
                 var uvList = simpUVs[m];
                 var normList = simpNormals[m];
-                var lockList = simpLocked[m];
 
-                int[] groupToMerged = new int[posList.Count];
+                int baseVertex = soup.Positions.Count;
                 for (int i = 0; i < posList.Count; i++)
                 {
-                    Vector3 p = posList[i];
-                    bool wasLocked = lockList != null && i < lockList.Count && lockList[i];
-                    int mergedIdx = -1;
-
-                    if (wasLocked)
-                    {
-                        Vector3Int key = new Vector3Int(
-                            Mathf.RoundToInt(p.x * invWeldDist),
-                            Mathf.RoundToInt(p.y * invWeldDist),
-                            Mathf.RoundToInt(p.z * invWeldDist)
-                        );
-                        if (!boundaryWeld.TryGetValue(key, out mergedIdx))
-                        {
-                            mergedIdx = soup.Positions.Count;
-                            boundaryWeld[key] = mergedIdx;
-                            soup.Positions.Add(p);
-                            soup.BoneA.Add(bAList[i]);
-                            soup.BoneB.Add(bBList[i]);
-                            soup.WeightA.Add(wAList[i]);
-                            hiddenFlags.Add(hidList[i]);
-                            if (uvList != null && i < uvList.Count) soup.UVs.Add(uvList[i]);
-                            if (normList != null && i < normList.Count) soup.Normals.Add(normList[i]);
-                        }
-                    }
-                    else
-                    {
-                        mergedIdx = soup.Positions.Count;
-                        soup.Positions.Add(p);
-                        soup.BoneA.Add(bAList[i]);
-                        soup.BoneB.Add(bBList[i]);
-                        soup.WeightA.Add(wAList[i]);
-                        hiddenFlags.Add(hidList[i]);
-                        if (uvList != null && i < uvList.Count) soup.UVs.Add(uvList[i]);
-                        if (normList != null && i < normList.Count) soup.Normals.Add(normList[i]);
-                    }
-                    groupToMerged[i] = mergedIdx;
+                    soup.Positions.Add(posList[i]);
+                    soup.BoneA.Add(bAList[i]);
+                    soup.BoneB.Add(bBList[i]);
+                    soup.WeightA.Add(wAList[i]);
+                    hiddenFlags.Add(hidList != null && i < hidList.Count ? hidList[i] : (byte)0);
+                    soup.UVs.Add(uvList != null && i < uvList.Count ? uvList[i] : Vector2.zero);
+                    soup.Normals.Add(normList != null && i < normList.Count ? normList[i] : Vector3.up);
                 }
 
                 int[] thisSubmeshTris = new int[indList.Count];
                 for (int i = 0; i < indList.Count; i += 3)
                 {
-                    int i0 = groupToMerged[indList[i]];
-                    int i1 = groupToMerged[indList[i + 1]];
-                    int i2 = groupToMerged[indList[i + 2]];
+                    int i0 = baseVertex + indList[i];
+                    int i1 = baseVertex + indList[i + 1];
+                    int i2 = baseVertex + indList[i + 2];
 
                     thisSubmeshTris[i] = i0;
                     thisSubmeshTris[i + 1] = i1;

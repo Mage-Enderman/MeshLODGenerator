@@ -87,8 +87,8 @@ namespace MeshLODGenerator
                 Collapse(positions, boneA, boneB, weightA, hiddenFlag, indices, targetTriangles, mirrorMap, lockedVertices, uvs, normals);
             }
 
-            // 4. Grid Cluster Fallback (if topological bottlenecks prevented target budget)
-            if (indices.Count / 3 > targetTriangles)
+            // 4. Grid Cluster Fallback (only for atlas mode where UVs are generated later and no locked boundaries exist)
+            if (indices.Count / 3 > targetTriangles && uvs == null && lockedVertices == null)
             {
                 ClusterFallback(positions, boneA, boneB, weightA, indices, targetTriangles, symmetric);
             }
@@ -256,29 +256,50 @@ namespace MeshLODGenerator
             float cell = Mathf.Max((max - min).magnitude * WeldEpsilonFactor, 1e-6f);
             float inverseCell = 1f / cell;
 
-            Dictionary<Vector3Int, int> cellToVertex = new Dictionary<Vector3Int, int>(positions.Count);
+            Dictionary<Vector3Int, List<int>> cellToVertices = new Dictionary<Vector3Int, List<int>>(positions.Count);
             int[] remap = new int[positions.Count];
             for (int i = 0; i < positions.Count; i++)
             {
                 Vector3 scaled = (positions[i] - min) * inverseCell;
                 Vector3Int key = new Vector3Int(Mathf.RoundToInt(scaled.x), Mathf.RoundToInt(scaled.y), Mathf.RoundToInt(scaled.z));
-                if (cellToVertex.TryGetValue(key, out int existing))
+                if (!cellToVertices.TryGetValue(key, out var list))
+                {
+                    list = new List<int>(2);
+                    cellToVertices[key] = list;
+                }
+
+                int match = -1;
+                for (int c = 0; c < list.Count; c++)
+                {
+                    int candidate = list[c];
+                    // If UVs exist, only weld if UVs match to preserve authored UV seams!
+                    if (uvs != null && i < uvs.Count && candidate < uvs.Count)
+                    {
+                        if ((uvs[i] - uvs[candidate]).sqrMagnitude > 1e-6f)
+                        {
+                            continue; // UV seam! Do not weld across seam!
+                        }
+                    }
+                    match = candidate;
+                    break;
+                }
+
+                if (match != -1)
                 {
                     // If current is locked and existing is not, prioritize current so locked vertex survives
-                    if (lockedVertices != null && lockedVertices[i] && !lockedVertices[existing])
+                    if (lockedVertices != null && lockedVertices[i] && !lockedVertices[match])
                     {
-                        cellToVertex[key] = i;
-                        remap[existing] = i;
+                        remap[match] = i;
                         remap[i] = i;
                     }
                     else
                     {
-                        remap[i] = existing;
+                        remap[i] = match;
                     }
                 }
                 else
                 {
-                    cellToVertex[key] = i;
+                    list.Add(i);
                     remap[i] = i;
                 }
             }
@@ -586,23 +607,53 @@ namespace MeshLODGenerator
             bool keepB = (target - pos[vb]).sqrMagnitude < (target - pos[va]).sqrMagnitude;
             if (locked != null && locked[va]) keepB = false;
 
+            float edgeLenSq = (pos[va] - pos[vb]).sqrMagnitude;
+            float t = edgeLenSq > 1e-10f ? Mathf.Clamp01(Vector3.Dot(target - pos[va], pos[vb] - pos[va]) / edgeLenSq) : 0.5f;
+
             if (keepB)
             {
                 boneA[va] = boneA[vb];
                 boneB[va] = boneB[vb];
                 weightA[va] = weightA[vb];
-                if (uvs != null && uvs.Count > vb && uvs.Count > va) uvs[va] = uvs[vb];
-                if (normals != null && normals.Count > vb && normals.Count > va) normals[va] = normals[vb];
             }
-            else
+
+            if (uvs != null && uvs.Count > vb && uvs.Count > va)
             {
-                if (uvs != null && uvs.Count > vb && uvs.Count > va && (locked == null || !locked[va]))
+                if (locked != null && locked[va])
                 {
-                    uvs[va] = Vector2.Lerp(uvs[va], uvs[vb], 0.5f);
+                    // Locked vertex keeps its exact authored UV!
                 }
-                if (normals != null && normals.Count > vb && normals.Count > va && (locked == null || !locked[va]))
+                else if (locked != null && locked[vb])
                 {
-                    normals[va] = Vector3.Normalize(normals[va] + normals[vb]);
+                    uvs[va] = uvs[vb];
+                }
+                else
+                {
+                    // If UV delta is large, edge spans a UV wrap boundary; pick nearer vertex UV
+                    if ((uvs[va] - uvs[vb]).sqrMagnitude > 0.04f)
+                    {
+                        uvs[va] = t > 0.5f ? uvs[vb] : uvs[va];
+                    }
+                    else
+                    {
+                        uvs[va] = Vector2.Lerp(uvs[va], uvs[vb], t);
+                    }
+                }
+            }
+
+            if (normals != null && normals.Count > vb && normals.Count > va)
+            {
+                if (locked != null && locked[va])
+                {
+                    // Locked vertex keeps its normal
+                }
+                else if (locked != null && locked[vb])
+                {
+                    normals[va] = normals[vb];
+                }
+                else
+                {
+                    normals[va] = Vector3.Normalize(Vector3.Lerp(normals[va], normals[vb], t));
                 }
             }
 
