@@ -608,7 +608,7 @@ namespace MeshLODGenerator
             if (locked != null && locked[va]) keepB = false;
 
             float edgeLenSq = (pos[va] - pos[vb]).sqrMagnitude;
-            float t = edgeLenSq > 1e-10f ? Mathf.Clamp01(Vector3.Dot(target - pos[va], pos[vb] - pos[va]) / edgeLenSq) : 0.5f;
+            float edgeT = edgeLenSq > 1e-10f ? Mathf.Clamp01(Vector3.Dot(target - pos[va], pos[vb] - pos[va]) / edgeLenSq) : 0.5f;
 
             if (keepB)
             {
@@ -632,11 +632,11 @@ namespace MeshLODGenerator
                     // If UV delta is large, edge spans a UV wrap boundary; pick nearer vertex UV
                     if ((uvs[va] - uvs[vb]).sqrMagnitude > 0.04f)
                     {
-                        uvs[va] = t > 0.5f ? uvs[vb] : uvs[va];
+                        uvs[va] = edgeT > 0.5f ? uvs[vb] : uvs[va];
                     }
                     else
                     {
-                        uvs[va] = Vector2.Lerp(uvs[va], uvs[vb], t);
+                        uvs[va] = Vector2.Lerp(uvs[va], uvs[vb], edgeT);
                     }
                 }
             }
@@ -653,7 +653,7 @@ namespace MeshLODGenerator
                 }
                 else
                 {
-                    normals[va] = Vector3.Normalize(Vector3.Lerp(normals[va], normals[vb], t));
+                    normals[va] = Vector3.Normalize(Vector3.Lerp(normals[va], normals[vb], edgeT));
                 }
             }
 
