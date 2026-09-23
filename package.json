@@ -1,0 +1,21 @@
+{
+  "name": "com.mageenderman.meshlodgenerator",
+  "version": "1.0.0",
+  "displayName": "Mesh LOD Generator",
+  "description": "Standalone, non-destructive mesh LOD generator with bilateral symmetry, per-material decimation, occlusion culling, and texture atlasing.",
+  "unity": "2022.3",
+  "author": {
+    "name": "Mage-Enderman",
+    "url": "https://github.com/Mage-Enderman"
+  },
+  "keywords": [
+    "lod",
+    "mesh",
+    "decimation",
+    "simplifier",
+    "symmetry",
+    "atlas",
+    "baker",
+    "avatar"
+  ]
+}
