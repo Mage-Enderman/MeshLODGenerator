@@ -482,7 +482,7 @@ namespace MeshLODGenerator
                 // Check mirror pair
                 int ma = mirror != null ? mirror[va] : -1;
                 int mb = mirror != null ? mirror[vb] : -1;
-                bool isPaired = mirror != null && ma >= 0 && mb >= 0 && ma != va && mb != vb && ma != mb;
+                bool isPaired = mirror != null && ma >= 0 && mb >= 0 && ma != va && mb != vb && ma != mb && ma != vb && mb != va;
 
                 if (isPaired)
                 {
@@ -535,7 +535,7 @@ namespace MeshLODGenerator
                              mirror, locked, uvs, normals);
 
                 // If paired, execute symmetric mirror collapse
-                if (isPaired)
+                if (isPaired && vertexTris[ma] != null && vertexTris[mb] != null)
                 {
                     ExecuteMerge(ma, mb, targetMA, pos, quadrics, versions, boneA, boneB, weightA, hiddenFlag,
                                  vertexTris, tris, triAlive, ref aliveTriangles, heap, neighborScratch, mergedTris,
@@ -579,6 +579,10 @@ namespace MeshLODGenerator
             List<HeapEntry> heap, HashSet<int> neighborScratch, List<int> mergedTris,
             int[] mirror, bool[] locked, List<Vector2> uvs, List<Vector3> normals)
         {
+            List<int> trisA = vertexTris[va];
+            List<int> trisB = vertexTris[vb];
+            if (trisA == null || trisB == null) return;
+
             bool keepB = (target - pos[vb]).sqrMagnitude < (target - pos[va]).sqrMagnitude;
             if (locked != null && locked[va]) keepB = false;
 
@@ -607,9 +611,6 @@ namespace MeshLODGenerator
             quadrics[va].Add(in quadrics[vb]);
             versions[va]++;
             versions[vb]++;
-
-            List<int> trisA = vertexTris[va];
-            List<int> trisB = vertexTris[vb];
 
             mergedTris.Clear();
             mergedTris.AddRange(trisA);
