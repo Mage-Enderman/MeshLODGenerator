@@ -22,6 +22,7 @@ namespace MeshLODGenerator
             public string AlbedoTexturePath;
             public string EmissionTexturePath;
             public GameObject TargetGameObject;
+            public Transform RootTransform;
             public Transform[] Bones;
             public Transform RootBone;
             public Material LodMaterial;
@@ -446,8 +447,12 @@ namespace MeshLODGenerator
                             }
                             else
                             {
-                                Transform rootAnchor = options.RootBone != null ? options.RootBone : bone.root;
-                                if (rootAnchor != null && rootAnchor != bone)
+                                Transform rootAnchor = options.RootTransform != null
+                                    ? options.RootTransform
+                                    : (options.TargetGameObject != null
+                                        ? options.TargetGameObject.transform
+                                        : (options.RootBone != null ? options.RootBone.root : null));
+                                if (rootAnchor != null)
                                 {
                                     Matrix4x4 rel = rootAnchor.worldToLocalMatrix * bone.localToWorldMatrix;
                                     DecomposeMatrix(rel, out localPos, out localRot, out localScale);
@@ -461,7 +466,11 @@ namespace MeshLODGenerator
                             }
                         }
 
-                        Vector3 euler = localRot.eulerAngles;
+                        // Convert local rotation to FBX right-handed Euler XYZ
+                        Matrix4x4 rotM = Matrix4x4.Rotate(localRot);
+                        Matrix4x4 S = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
+                        Matrix4x4 fbxRotM = S * rotM * S;
+                        Vector3 fbxEuler = MatrixToEulerXYZ(fbxRotM);
 
                         // Bone Model (LimbNode)
                         writer.BeginNode("Model");
@@ -471,7 +480,7 @@ namespace MeshLODGenerator
                         writer.WriteNodeInt("Version", 232);
                         writer.BeginNode("Properties70");
                         WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", localPos.x * 100.0, localPos.y * 100.0, -localPos.z * 100.0);
-                        WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", euler.x, -euler.y, -euler.z);
+                        WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", fbxEuler.x, fbxEuler.y, fbxEuler.z);
                         WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", localScale.x, localScale.y, localScale.z);
                         writer.EndNode();
                         writer.WriteNodeBool("Shading", true);
@@ -764,6 +773,25 @@ namespace MeshLODGenerator
             if (scale.y > 1e-6f) rotM.SetColumn(1, rotM.GetColumn(1) / scale.y);
             if (scale.z > 1e-6f) rotM.SetColumn(2, rotM.GetColumn(2) / scale.z);
             rot = rotM.rotation;
+        }
+
+        private static Vector3 MatrixToEulerXYZ(Matrix4x4 m)
+        {
+            float sb = Mathf.Clamp(-m.m20, -1f, 1f);
+            float beta = Mathf.Asin(sb);
+            float cb = Mathf.Cos(beta);
+            float alpha, gamma;
+            if (Mathf.Abs(cb) > 1e-5f)
+            {
+                alpha = Mathf.Atan2(m.m21, m.m22);
+                gamma = Mathf.Atan2(m.m10, m.m00);
+            }
+            else
+            {
+                alpha = Mathf.Atan2(-m.m12, m.m11);
+                gamma = 0f;
+            }
+            return new Vector3(alpha * Mathf.Rad2Deg, beta * Mathf.Rad2Deg, gamma * Mathf.Rad2Deg);
         }
 
         private static void WriteObjectTypeCount(FbxBinaryWriter writer, string name, int count)

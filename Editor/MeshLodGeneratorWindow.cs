@@ -485,6 +485,7 @@ namespace MeshLODGenerator
                 Mesh = _result.LodMesh,
                 AlbedoTexture = _result.AlbedoAtlas,
                 EmissionTexture = _result.EmissionAtlas,
+                RootTransform = _targetObject != null ? _targetObject.transform : null,
                 Bones = _result.Bones,
                 RootBone = _result.RootBone
             };
@@ -512,6 +513,7 @@ namespace MeshLODGenerator
                 Mesh = _result.LodMesh,
                 AlbedoTexturePath = texPath,
                 TargetGameObject = _targetObject,
+                RootTransform = _targetObject != null ? _targetObject.transform : null,
                 Bones = _result.Bones,
                 RootBone = _result.RootBone,
                 LodMaterial = _result.LodMaterial,
@@ -631,6 +633,7 @@ namespace MeshLODGenerator
                 Mesh = _result.LodMesh,
                 AlbedoTexture = _result.AlbedoAtlas,
                 EmissionTexture = _result.EmissionAtlas,
+                RootTransform = _targetObject != null ? _targetObject.transform : null,
                 Bones = _result.Bones,
                 RootBone = _result.RootBone
             });
@@ -643,6 +646,7 @@ namespace MeshLODGenerator
                 Mesh = _result.LodMesh,
                 AlbedoTexturePath = albedoPath,
                 TargetGameObject = _targetObject,
+                RootTransform = _targetObject != null ? _targetObject.transform : null,
                 Bones = _result.Bones,
                 RootBone = _result.RootBone,
                 LodMaterial = _result.LodMaterial,

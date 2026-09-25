@@ -26,6 +26,7 @@ namespace MeshLODGenerator
             public Mesh Mesh;
             public Texture2D AlbedoTexture;
             public Texture2D EmissionTexture;
+            public Transform RootTransform;
             public Transform[] Bones;
             public Transform RootBone;
         }
@@ -367,9 +368,12 @@ namespace MeshLODGenerator
                     else
                     {
                         rootJointIndices.Add(1 + b);
-                        sceneNodeIndices.Add(1 + b);
                     }
                 }
+
+                Transform rootAnchor = options.RootTransform != null
+                    ? options.RootTransform
+                    : (options.RootBone != null ? options.RootBone.root : null);
 
                 for (int b = 0; b < numBones; b++)
                 {
@@ -401,8 +405,7 @@ namespace MeshLODGenerator
                         }
                         else
                         {
-                            Transform rootAnchor = options.RootBone != null ? options.RootBone : bone.root;
-                            if (rootAnchor != null && rootAnchor != bone)
+                            if (rootAnchor != null)
                             {
                                 Matrix4x4 rel = rootAnchor.worldToLocalMatrix * bone.localToWorldMatrix;
                                 DecomposeMatrix(rel, out pos, out rot, out scale);
@@ -432,6 +435,18 @@ namespace MeshLODGenerator
                     sbNode.Append("}");
                     nodesJson.Add(sbNode.ToString());
                 }
+
+                // Add Armature root node to encapsulate root joints
+                int armatureNodeIndex = 1 + numBones;
+                StringBuilder sbArm = new StringBuilder();
+                sbArm.Append("{\"name\":\"Armature\",\"translation\":[0,0,0],\"rotation\":[0,0,0,1],\"scale\":[1,1,1]");
+                if (rootJointIndices.Count > 0)
+                {
+                    sbArm.Append($",\"children\":[{string.Join(",", rootJointIndices)}]");
+                }
+                sbArm.Append("}");
+                nodesJson.Add(sbArm.ToString());
+                sceneNodeIndices.Add(armatureNodeIndex);
             }
 
             byte[] binChunk = binStream.ToArray();
@@ -449,8 +464,8 @@ namespace MeshLODGenerator
             {
                 List<int> jointIndices = new List<int>(numBones);
                 for (int b = 0; b < numBones; b++) jointIndices.Add(1 + b);
-                string skeletonProp = sceneNodeIndices.Count > 1 ? $",\"skeleton\":{sceneNodeIndices[1]}" : "";
-                string skinJson = $"{{\"inverseBindMatrices\":{ibmAccessor},\"joints\":[{string.Join(",", jointIndices)}]{skeletonProp}}}";
+                int armatureNodeIndex = 1 + numBones;
+                string skinJson = $"{{\"inverseBindMatrices\":{ibmAccessor},\"joints\":[{string.Join(",", jointIndices)}],\"skeleton\":{armatureNodeIndex}}}";
                 json.Append($"\"skins\":[{skinJson}],");
             }
 
