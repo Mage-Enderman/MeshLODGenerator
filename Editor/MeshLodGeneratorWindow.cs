@@ -183,6 +183,16 @@ namespace MeshLODGenerator
             _settings.CullHiddenGeometry = EditorGUILayout.Toggle(new GUIContent("Cull Occluded Geometry", "Removes internal or hidden triangles (e.g. inner body under clothes, cavities) to maximize visible triangle budget."), _settings.CullHiddenGeometry);
             _settings.ComputeAmbientOcclusion = EditorGUILayout.Toggle("Bake Contact AO", _settings.ComputeAmbientOcclusion);
 
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Rigging & Skeleton", EditorStyles.boldLabel);
+            _settings.PreserveOriginalBones = EditorGUILayout.Toggle(
+                new GUIContent("Preserve Original Bones & Weights", "Preserves the complete bone hierarchy (fingers, hair, clothing, twist bones, physics bones) and 4-influence vertex weights instead of collapsing to 20 humanoid core bones."),
+                _settings.PreserveOriginalBones);
+            if (_settings.PreserveOriginalBones)
+            {
+                MeshLodUI.Note("Full armature & 4-influence skin weights will be preserved for skinned meshes.");
+            }
+
             Animator anim = _targetObject != null ? _targetObject.GetComponentInChildren<Animator>() : null;
             if (anim != null && anim.avatar != null && anim.avatar.isHuman)
             {

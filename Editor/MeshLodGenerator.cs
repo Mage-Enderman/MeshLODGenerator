@@ -41,6 +41,7 @@ namespace MeshLODGenerator
             public bool SeparateByMaterial = false;
             public float SymmetryTolerance = 0.001f;
             public bool PreserveSubmeshMaterials = false;
+            public bool PreserveOriginalBones = false;
             public List<Renderer> IgnoredRenderers = new List<Renderer>();
         }
 
@@ -84,6 +85,7 @@ namespace MeshLODGenerator
             public readonly List<byte> BoneA = new List<byte>(65536);
             public readonly List<byte> BoneB = new List<byte>(65536);
             public readonly List<byte> WeightA = new List<byte>(65536);
+            public readonly List<BoneWeight> BoneWeights = new List<BoneWeight>(65536);
             public readonly List<Vector2> UVs = new List<Vector2>(65536);
             public readonly List<Vector3> Normals = new List<Vector3>(65536);
             public readonly List<int> Indices = new List<int>(196608);
@@ -194,13 +196,18 @@ namespace MeshLODGenerator
 
                 EditorUtility.DisplayProgressBar("Mesh LOD Generator", "Scanning geometry...", 0.15f);
                 GeometrySoup soup;
-                if (isHumanoid && humanoidSkeleton != null && humanoidSkeleton.Count > 0)
+                if (!settings.PreserveOriginalBones && isHumanoid && humanoidSkeleton != null && humanoidSkeleton.Count > 0)
                 {
                     soup = SnapshotHumanoidGeometry(animator, root, humanoidSkeleton, settings);
                 }
                 else
                 {
                     soup = SnapshotGenericGeometry(root, settings);
+                    if (isHumanoid && animator != null && soup.RootBone == null)
+                    {
+                        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+                        if (hips != null) soup.RootBone = hips;
+                    }
                 }
 
                 report.RendererCount = soup.Bones.Count > 0 ? soup.Bones.Count : 1;
@@ -239,7 +246,7 @@ namespace MeshLODGenerator
                 }
 
                 // 3. Build Bake Mask from culled soup before simplification
-                MeshLodAtlasBaker.BakeMask bakeMask = BuildBakeMask(soup, humanoidSkeleton);
+                MeshLodAtlasBaker.BakeMask bakeMask = BuildBakeMask(soup, settings.PreserveOriginalBones ? null : humanoidSkeleton);
 
                 // 4. Mesh Simplification via QEM Edge-Collapse with optional bilateral symmetry and per-material boundary locking
                 int[][] submeshTris = null;
@@ -257,7 +264,8 @@ namespace MeshLODGenerator
                         symmetryTolerance: settings.SymmetryTolerance,
                         lockedVertices: null,
                         uvs: soup.UVs,
-                        normals: soup.Normals
+                        normals: soup.Normals,
+                        boneWeights: soup.BoneWeights.Count > 0 ? soup.BoneWeights : null
                     );
                 }
 
@@ -295,17 +303,25 @@ namespace MeshLODGenerator
 
                     if (soup.IsRigged && soup.Bones.Count > 0)
                     {
-                        BoneWeight[] boneWeights = new BoneWeight[multiPositions.Length];
-                        for (int i = 0; i < multiPositions.Length; i++)
+                        BoneWeight[] boneWeights;
+                        if (soup.BoneWeights.Count == multiPositions.Length)
                         {
-                            float wA = soup.WeightA[i] / 255f;
-                            boneWeights[i] = new BoneWeight
+                            boneWeights = soup.BoneWeights.ToArray();
+                        }
+                        else
+                        {
+                            boneWeights = new BoneWeight[multiPositions.Length];
+                            for (int i = 0; i < multiPositions.Length; i++)
                             {
-                                boneIndex0 = soup.BoneA[i],
-                                weight0 = wA,
-                                boneIndex1 = soup.BoneB[i],
-                                weight1 = 1f - wA
-                            };
+                                float wA = soup.WeightA[i] / 255f;
+                                boneWeights[i] = new BoneWeight
+                                {
+                                    boneIndex0 = soup.BoneA[i],
+                                    weight0 = wA,
+                                    boneIndex1 = soup.BoneB[i],
+                                    weight1 = 1f - wA
+                                };
+                            }
                         }
                         multiMesh.boneWeights = boneWeights;
 
@@ -348,22 +364,23 @@ namespace MeshLODGenerator
                 // 5. Unwrap Secondary UV Set & Smooth Normals Across Seams
                 EditorUtility.DisplayProgressBar("Mesh LOD Generator", "Unwrapping UVs...", 0.55f);
                 Mesh unwrappedMesh = BuildUnwrappedMesh(soup, hiddenFlags, settings.AtlasSize,
-                    out byte[] finalBoneA, out byte[] finalBoneB, out byte[] finalWeightA, out byte[] texelHidden);
+                    out byte[] finalBoneA, out byte[] finalBoneB, out byte[] finalWeightA, out byte[] texelHidden, out BoneWeight[] finalBoneWeights);
 
-                if (isHumanoid && humanoidSkeleton != null)
+                if (!settings.PreserveOriginalBones && isHumanoid && humanoidSkeleton != null)
                 {
                     RepackChartsByImportance(unwrappedMesh, finalBoneA, texelHidden, humanoidSkeleton, settings.AtlasSize);
                 }
 
                 // 6. Build Regions of Interest for close-up passes
                 MeshLodAtlasBaker.RegionOfInterest[] regions = null;
-                if (isHumanoid && humanoidSkeleton != null)
+                if (!settings.PreserveOriginalBones && isHumanoid && humanoidSkeleton != null)
                 {
                     regions = BuildCaptureRegions(humanoidSkeleton, unwrappedMesh.vertices, finalBoneA, finalBoneB, finalWeightA);
                     bakeMask.TexelVertexGroup = new byte[finalBoneA.Length];
                     for (int i = 0; i < finalBoneA.Length; i++)
                     {
-                        bakeMask.TexelVertexGroup[i] = GroupOfBone(humanoidSkeleton.Bones[finalBoneA[i]]);
+                        int bIdx = Mathf.Clamp((int)finalBoneA[i], 0, humanoidSkeleton.Bones.Count - 1);
+                        bakeMask.TexelVertexGroup[i] = GroupOfBone(humanoidSkeleton.Bones[bIdx]);
                     }
                     bakeMask.TexelHidden = texelHidden;
                 }
@@ -435,17 +452,25 @@ namespace MeshLODGenerator
 
                 if (soup.IsRigged && soup.Bones.Count > 0)
                 {
-                    BoneWeight[] boneWeights = new BoneWeight[finalPositions.Length];
-                    for (int i = 0; i < finalPositions.Length; i++)
+                    BoneWeight[] boneWeights;
+                    if (finalBoneWeights != null && finalBoneWeights.Length == finalPositions.Length)
                     {
-                        float wA = finalWeightA[i] / 255f;
-                        boneWeights[i] = new BoneWeight
+                        boneWeights = finalBoneWeights;
+                    }
+                    else
+                    {
+                        boneWeights = new BoneWeight[finalPositions.Length];
+                        for (int i = 0; i < finalPositions.Length; i++)
                         {
-                            boneIndex0 = finalBoneA[i],
-                            weight0 = wA,
-                            boneIndex1 = finalBoneB[i],
-                            weight1 = 1f - wA
-                        };
+                            float wA = finalWeightA[i] / 255f;
+                            boneWeights[i] = new BoneWeight
+                            {
+                                boneIndex0 = finalBoneA[i],
+                                weight0 = wA,
+                                boneIndex1 = finalBoneB[i],
+                                weight1 = 1f - wA
+                            };
+                        }
                     }
                     finalMesh.boneWeights = boneWeights;
 
@@ -738,6 +763,13 @@ namespace MeshLODGenerator
                 soup.BoneA.Add((byte)bestBone);
                 soup.BoneB.Add((byte)secondBone);
                 soup.WeightA.Add((byte)Mathf.Clamp(Mathf.RoundToInt(normalized * 255f), 0, 255));
+                soup.BoneWeights.Add(new BoneWeight
+                {
+                    boneIndex0 = bestBone,
+                    weight0 = normalized,
+                    boneIndex1 = secondBone,
+                    weight1 = 1f - normalized
+                });
                 soup.UVs.Add(uvs != null && v < uvs.Length ? uvs[v] : Vector2.zero);
                 Vector3 n = (normals != null && v < normals.Length) ? rootWorldToLocal.MultiplyVector(skinned.transform.TransformDirection(normals[v])) : Vector3.up;
                 soup.Normals.Add(n.normalized);
@@ -768,6 +800,7 @@ namespace MeshLODGenerator
                 soup.BoneA.Add((byte)bone);
                 soup.BoneB.Add((byte)bone);
                 soup.WeightA.Add(255);
+                soup.BoneWeights.Add(new BoneWeight { boneIndex0 = bone, weight0 = 1f });
                 soup.UVs.Add(uvs != null && v < uvs.Length ? uvs[v] : Vector2.zero);
                 Vector3 n = (normals != null && v < normals.Length) ? toRoot.MultiplyVector(normals[v]) : Vector3.up;
                 soup.Normals.Add(n.normalized);
@@ -799,7 +832,19 @@ namespace MeshLODGenerator
                     MeshFilter filter = meshRenderer.GetComponent<MeshFilter>();
                     if (filter != null && filter.sharedMesh != null)
                     {
-                        AppendGenericStaticMesh(soup, filter.sharedMesh, meshRenderer.transform, rootWorldToLocal, meshRenderer.sharedMaterials);
+                        int attachedBone = 0;
+                        Transform cur = meshRenderer.transform.parent;
+                        while (cur != null)
+                        {
+                            if (boneToIndex.TryGetValue(cur, out int found))
+                            {
+                                attachedBone = found;
+                                break;
+                            }
+                            if (cur == root) break;
+                            cur = cur.parent;
+                        }
+                        AppendGenericStaticMesh(soup, filter.sharedMesh, meshRenderer.transform, rootWorldToLocal, meshRenderer.sharedMaterials, attachedBone);
                     }
                 }
             }
@@ -819,7 +864,7 @@ namespace MeshLODGenerator
 
             if (bones == null || bones.Length == 0)
             {
-                AppendGenericStaticMesh(soup, mesh, skinned.transform, rootWorldToLocal, skinned.sharedMaterials);
+                AppendGenericStaticMesh(soup, mesh, skinned.transform, rootWorldToLocal, skinned.sharedMaterials, 0);
                 return;
             }
 
@@ -850,55 +895,82 @@ namespace MeshLODGenerator
 
             var bonesPerVertex = mesh.GetBonesPerVertex();
             var allWeights = mesh.GetAllBoneWeights();
+            bool hasVariableWeights = bonesPerVertex.Length == vertices.Length;
+            BoneWeight[] legacyWeights = !hasVariableWeights ? mesh.boneWeights : null;
 
             int vertexBase = soup.Positions.Count;
             int weightCursor = 0;
 
             for (int v = 0; v < vertices.Length; v++)
             {
-                int influenceCount = bonesPerVertex.Length == vertices.Length ? bonesPerVertex[v] : 0;
+                int influenceCount = hasVariableWeights ? bonesPerVertex[v] : 0;
                 Vector3 world = Vector3.zero;
                 float totalWeight = 0f;
 
-                int bestBone = 0, secondBone = 0;
-                float bestWeight = 0f, secondWeight = 0f;
+                MeshLodMeshSimplifier.BoneAccumulator accum = default;
 
-                for (int i = 0; i < influenceCount; i++)
+                if (hasVariableWeights)
                 {
-                    BoneWeight1 w = allWeights[weightCursor++];
-                    if (w.boneIndex < 0 || w.boneIndex >= boneCount || w.weight <= 0f) continue;
-
-                    world += skinMatrices[w.boneIndex].MultiplyPoint3x4(vertices[v]) * w.weight;
-                    totalWeight += w.weight;
-
-                    int mappedBone = boneMap[w.boneIndex];
-                    if (w.weight > bestWeight)
+                    for (int i = 0; i < influenceCount; i++)
                     {
-                        secondBone = bestBone; secondWeight = bestWeight;
-                        bestBone = mappedBone; bestWeight = w.weight;
+                        BoneWeight1 w = allWeights[weightCursor++];
+                        if (w.boneIndex < 0 || w.boneIndex >= boneCount || w.weight <= 0f) continue;
+
+                        world += skinMatrices[w.boneIndex].MultiplyPoint3x4(vertices[v]) * w.weight;
+                        totalWeight += w.weight;
+
+                        int mappedBone = boneMap[w.boneIndex];
+                        accum.Add(mappedBone, w.weight);
                     }
-                    else if (w.weight > secondWeight)
+                }
+                else if (legacyWeights != null && legacyWeights.Length == vertices.Length)
+                {
+                    BoneWeight lw = legacyWeights[v];
+                    if (lw.weight0 > 0f && lw.boneIndex0 >= 0 && lw.boneIndex0 < boneCount)
                     {
-                        secondBone = mappedBone; secondWeight = w.weight;
+                        world += skinMatrices[lw.boneIndex0].MultiplyPoint3x4(vertices[v]) * lw.weight0;
+                        totalWeight += lw.weight0;
+                        accum.Add(boneMap[lw.boneIndex0], lw.weight0);
+                    }
+                    if (lw.weight1 > 0f && lw.boneIndex1 >= 0 && lw.boneIndex1 < boneCount)
+                    {
+                        world += skinMatrices[lw.boneIndex1].MultiplyPoint3x4(vertices[v]) * lw.weight1;
+                        totalWeight += lw.weight1;
+                        accum.Add(boneMap[lw.boneIndex1], lw.weight1);
+                    }
+                    if (lw.weight2 > 0f && lw.boneIndex2 >= 0 && lw.boneIndex2 < boneCount)
+                    {
+                        world += skinMatrices[lw.boneIndex2].MultiplyPoint3x4(vertices[v]) * lw.weight2;
+                        totalWeight += lw.weight2;
+                        accum.Add(boneMap[lw.boneIndex2], lw.weight2);
+                    }
+                    if (lw.weight3 > 0f && lw.boneIndex3 >= 0 && lw.boneIndex3 < boneCount)
+                    {
+                        world += skinMatrices[lw.boneIndex3].MultiplyPoint3x4(vertices[v]) * lw.weight3;
+                        totalWeight += lw.weight3;
+                        accum.Add(boneMap[lw.boneIndex3], lw.weight3);
                     }
                 }
 
                 if (totalWeight <= 1e-5f)
                 {
                     world = skinned.transform.localToWorldMatrix.MultiplyPoint3x4(vertices[v]);
-                    bestBone = boneMap.Length > 0 ? boneMap[0] : 0;
-                    bestWeight = 1f;
+                    int defaultBone = boneMap.Length > 0 ? boneMap[0] : 0;
+                    accum.Add(defaultBone, 1f);
                 }
                 else
                 {
                     world /= totalWeight;
                 }
 
-                float normWeight = bestWeight / (bestWeight + secondWeight + 1e-7f);
+                BoneWeight fullBW = accum.ToNormalizedBoneWeight();
                 soup.Positions.Add(rootWorldToLocal.MultiplyPoint3x4(world));
-                soup.BoneA.Add((byte)Mathf.Clamp(bestBone, 0, 255));
-                soup.BoneB.Add((byte)Mathf.Clamp(secondBone, 0, 255));
-                soup.WeightA.Add((byte)Mathf.Clamp(Mathf.RoundToInt(normWeight * 255f), 0, 255));
+                soup.BoneA.Add((byte)Mathf.Clamp(fullBW.boneIndex0, 0, 255));
+                soup.BoneB.Add((byte)Mathf.Clamp(fullBW.boneIndex1, 0, 255));
+                float sum2 = fullBW.weight0 + fullBW.weight1;
+                float norm2 = sum2 > 1e-6f ? fullBW.weight0 / sum2 : 1f;
+                soup.WeightA.Add((byte)Mathf.Clamp(Mathf.RoundToInt(norm2 * 255f), 0, 255));
+                soup.BoneWeights.Add(fullBW);
                 soup.UVs.Add(uvs != null && v < uvs.Length ? uvs[v] : Vector2.zero);
                 Vector3 n = (normals != null && v < normals.Length) ? rootWorldToLocal.MultiplyVector(skinned.transform.TransformDirection(normals[v])) : Vector3.up;
                 soup.Normals.Add(n.normalized);
@@ -912,7 +984,8 @@ namespace MeshLODGenerator
             Mesh mesh,
             Transform meshTransform,
             Matrix4x4 rootWorldToLocal,
-            Material[] materials)
+            Material[] materials,
+            int attachedBone = 0)
         {
             Matrix4x4 toRoot = rootWorldToLocal * meshTransform.localToWorldMatrix;
             Vector3[] vertices = mesh.vertices;
@@ -923,9 +996,10 @@ namespace MeshLODGenerator
             for (int v = 0; v < vertices.Length; v++)
             {
                 soup.Positions.Add(toRoot.MultiplyPoint3x4(vertices[v]));
-                soup.BoneA.Add(0);
-                soup.BoneB.Add(0);
+                soup.BoneA.Add((byte)Mathf.Clamp(attachedBone, 0, 255));
+                soup.BoneB.Add((byte)Mathf.Clamp(attachedBone, 0, 255));
                 soup.WeightA.Add(255);
+                soup.BoneWeights.Add(new BoneWeight { boneIndex0 = attachedBone, weight0 = 1f });
                 soup.UVs.Add(uvs != null && v < uvs.Length ? uvs[v] : Vector2.zero);
                 Vector3 n = (normals != null && v < normals.Length) ? toRoot.MultiplyVector(normals[v]) : Vector3.up;
                 soup.Normals.Add(n.normalized);
@@ -1019,6 +1093,7 @@ namespace MeshLODGenerator
             List<byte>[] simpBoneA = new List<byte>[matCount];
             List<byte>[] simpBoneB = new List<byte>[matCount];
             List<byte>[] simpWeightA = new List<byte>[matCount];
+            List<BoneWeight>[] simpBoneWeights = new List<BoneWeight>[matCount];
             List<byte>[] simpHidden = new List<byte>[matCount];
             List<Vector2>[] simpUVs = new List<Vector2>[matCount];
             List<Vector3>[] simpNormals = new List<Vector3>[matCount];
@@ -1037,6 +1112,7 @@ namespace MeshLODGenerator
                 List<byte> subBoneA = new List<byte>();
                 List<byte> subBoneB = new List<byte>();
                 List<byte> subWeightA = new List<byte>();
+                List<BoneWeight> subBoneWeights = new List<BoneWeight>();
                 List<byte> subHidden = new List<byte>();
                 List<Vector2> subUVs = new List<Vector2>();
                 List<Vector3> subNormals = new List<Vector3>();
@@ -1054,6 +1130,7 @@ namespace MeshLODGenerator
                         subBoneA.Add(soup.BoneA[sIdx]);
                         subBoneB.Add(soup.BoneB[sIdx]);
                         subWeightA.Add(soup.WeightA[sIdx]);
+                        subBoneWeights.Add(sIdx < soup.BoneWeights.Count ? soup.BoneWeights[sIdx] : default);
                         subHidden.Add(hiddenFlags.Count > sIdx ? hiddenFlags[sIdx] : (byte)0);
                         subUVs.Add(sIdx < soup.UVs.Count ? soup.UVs[sIdx] : Vector2.zero);
                         subNormals.Add(sIdx < soup.Normals.Count ? soup.Normals[sIdx] : Vector3.up);
@@ -1075,13 +1152,15 @@ namespace MeshLODGenerator
                     symmetryTolerance: settings.SymmetryTolerance,
                     lockedVertices: subLocked.ToArray(),
                     uvs: subUVs,
-                    normals: subNormals
+                    normals: subNormals,
+                    boneWeights: soup.BoneWeights.Count > 0 ? subBoneWeights : null
                 );
 
                 simpPos[m] = subPos;
                 simpBoneA[m] = subBoneA;
                 simpBoneB[m] = subBoneB;
                 simpWeightA[m] = subWeightA;
+                simpBoneWeights[m] = subBoneWeights;
                 simpHidden[m] = subHidden;
                 simpUVs[m] = subUVs;
                 simpNormals[m] = subNormals;
@@ -1094,6 +1173,7 @@ namespace MeshLODGenerator
             soup.BoneA.Clear();
             soup.BoneB.Clear();
             soup.WeightA.Clear();
+            soup.BoneWeights.Clear();
             soup.Indices.Clear();
             soup.TriangleMaterials.Clear();
             soup.UVs.Clear();
@@ -1115,6 +1195,7 @@ namespace MeshLODGenerator
                 var bAList = simpBoneA[m];
                 var bBList = simpBoneB[m];
                 var wAList = simpWeightA[m];
+                var bwList = simpBoneWeights[m];
                 var hidList = simpHidden[m];
                 var uvList = simpUVs[m];
                 var normList = simpNormals[m];
@@ -1126,6 +1207,7 @@ namespace MeshLODGenerator
                     soup.BoneA.Add(bAList[i]);
                     soup.BoneB.Add(bBList[i]);
                     soup.WeightA.Add(wAList[i]);
+                    soup.BoneWeights.Add(bwList != null && i < bwList.Count ? bwList[i] : default);
                     hiddenFlags.Add(hidList != null && i < hidList.Count ? hidList[i] : (byte)0);
                     soup.UVs.Add(uvList != null && i < uvList.Count ? uvList[i] : Vector2.zero);
                     soup.Normals.Add(normList != null && i < normList.Count ? normList[i] : Vector3.up);
@@ -1282,7 +1364,8 @@ namespace MeshLODGenerator
             out byte[] boneA,
             out byte[] boneB,
             out byte[] weightA,
-            out byte[] hidden)
+            out byte[] hidden,
+            out BoneWeight[] boneWeights)
         {
             Mesh mesh = new Mesh
             {
@@ -1314,6 +1397,7 @@ namespace MeshLODGenerator
             boneB = new byte[vertices.Length];
             weightA = new byte[vertices.Length];
             hidden = new byte[vertices.Length];
+            boneWeights = soup.BoneWeights.Count > 0 ? new BoneWeight[vertices.Length] : null;
 
             for (int i = 0; i < vertices.Length; i++)
             {
@@ -1322,6 +1406,10 @@ namespace MeshLODGenerator
                 boneB[i] = soup.BoneB[src];
                 weightA[i] = soup.WeightA[src];
                 hidden[i] = hiddenFlags != null && src < hiddenFlags.Count ? hiddenFlags[src] : (byte)0;
+                if (boneWeights != null && src < soup.BoneWeights.Count)
+                {
+                    boneWeights[i] = soup.BoneWeights[src];
+                }
             }
 
             mesh.uv = uv2;

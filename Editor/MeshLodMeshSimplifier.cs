@@ -33,7 +33,8 @@ namespace MeshLODGenerator
             float symmetryTolerance = 0.001f,
             bool[] lockedVertices = null,
             List<Vector2> uvs = null,
-            List<Vector3> normals = null)
+            List<Vector3> normals = null,
+            List<BoneWeight> boneWeights = null)
         {
             if (positions == null || positions.Count == 0 || indices == null || indices.Count < 3)
             {
@@ -84,7 +85,7 @@ namespace MeshLODGenerator
             // 3. Quadric Edge Collapse
             if (indices.Count / 3 > targetTriangles)
             {
-                Collapse(positions, boneA, boneB, weightA, hiddenFlag, indices, targetTriangles, mirrorMap, lockedVertices, uvs, normals);
+                Collapse(positions, boneA, boneB, weightA, hiddenFlag, indices, targetTriangles, mirrorMap, lockedVertices, uvs, normals, boneWeights);
             }
 
             // 4. Grid Cluster Fallback (only for atlas mode where UVs are generated later and no locked boundaries exist)
@@ -94,7 +95,7 @@ namespace MeshLODGenerator
             }
 
             // 5. Compact unreferenced vertices
-            Compact(positions, boneA, boneB, weightA, hiddenFlag, indices, uvs, normals);
+            Compact(positions, boneA, boneB, weightA, hiddenFlag, indices, uvs, normals, boneWeights);
 
             if (dummyBones)
             {
@@ -391,6 +392,146 @@ namespace MeshLODGenerator
             public Vector3 Target;
         }
 
+        public struct BoneAccumulator
+        {
+            public int b0, b1, b2, b3, b4, b5, b6, b7;
+            public float w0, w1, w2, w3, w4, w5, w6, w7;
+            public int count;
+
+            public void Add(int bone, float weight)
+            {
+                if (weight <= 0f || bone < 0) return;
+                if (count > 0 && b0 == bone) { w0 += weight; return; }
+                if (count > 1 && b1 == bone) { w1 += weight; return; }
+                if (count > 2 && b2 == bone) { w2 += weight; return; }
+                if (count > 3 && b3 == bone) { w3 += weight; return; }
+                if (count > 4 && b4 == bone) { w4 += weight; return; }
+                if (count > 5 && b5 == bone) { w5 += weight; return; }
+                if (count > 6 && b6 == bone) { w6 += weight; return; }
+                if (count > 7 && b7 == bone) { w7 += weight; return; }
+
+                switch (count)
+                {
+                    case 0: b0 = bone; w0 = weight; count = 1; break;
+                    case 1: b1 = bone; w1 = weight; count = 2; break;
+                    case 2: b2 = bone; w2 = weight; count = 3; break;
+                    case 3: b3 = bone; w3 = weight; count = 4; break;
+                    case 4: b4 = bone; w4 = weight; count = 5; break;
+                    case 5: b5 = bone; w5 = weight; count = 6; break;
+                    case 6: b6 = bone; w6 = weight; count = 7; break;
+                    case 7: b7 = bone; w7 = weight; count = 8; break;
+                }
+            }
+
+            public BoneWeight ToNormalizedBoneWeight()
+            {
+                if (count == 0) return default;
+
+                int outB0 = 0, outB1 = 0, outB2 = 0, outB3 = 0;
+                float outW0 = 0f, outW1 = 0f, outW2 = 0f, outW3 = 0f;
+
+                for (int slot = 0; slot < 4 && slot < count; slot++)
+                {
+                    int bestIdx = -1;
+                    float maxW = -1f;
+                    for (int i = 0; i < count; i++)
+                    {
+                        float w = GetWeight(i);
+                        if (w > maxW)
+                        {
+                            maxW = w;
+                            bestIdx = i;
+                        }
+                    }
+                    if (bestIdx < 0 || maxW <= 0f) break;
+
+                    int bone = GetBone(bestIdx);
+                    SetWeight(bestIdx, -1f);
+
+                    switch (slot)
+                    {
+                        case 0: outB0 = bone; outW0 = maxW; break;
+                        case 1: outB1 = bone; outW1 = maxW; break;
+                        case 2: outB2 = bone; outW2 = maxW; break;
+                        case 3: outB3 = bone; outW3 = maxW; break;
+                    }
+                }
+
+                float sum = outW0 + outW1 + outW2 + outW3;
+                if (sum > 1e-6f)
+                {
+                    float inv = 1f / sum;
+                    outW0 *= inv;
+                    outW1 *= inv;
+                    outW2 *= inv;
+                    outW3 *= inv;
+                }
+                else
+                {
+                    outW0 = 1f;
+                }
+
+                return new BoneWeight
+                {
+                    boneIndex0 = outB0, weight0 = outW0,
+                    boneIndex1 = outB1, weight1 = outW1,
+                    boneIndex2 = outB2, weight2 = outW2,
+                    boneIndex3 = outB3, weight3 = outW3
+                };
+            }
+
+            private float GetWeight(int idx)
+            {
+                switch (idx)
+                {
+                    case 0: return w0; case 1: return w1; case 2: return w2; case 3: return w3;
+                    case 4: return w4; case 5: return w5; case 6: return w6; case 7: return w7;
+                    default: return 0f;
+                }
+            }
+
+            private void SetWeight(int idx, float val)
+            {
+                switch (idx)
+                {
+                    case 0: w0 = val; break; case 1: w1 = val; break; case 2: w2 = val; break; case 3: w3 = val; break;
+                    case 4: w4 = val; break; case 5: w5 = val; break; case 6: w6 = val; break; case 7: w7 = val; break;
+                }
+            }
+
+            private int GetBone(int idx)
+            {
+                switch (idx)
+                {
+                    case 0: return b0; case 1: return b1; case 2: return b2; case 3: return b3;
+                    case 4: return b4; case 5: return b5; case 6: return b6; case 7: return b7;
+                    default: return 0;
+                }
+            }
+        }
+
+        private static BoneWeight BlendBoneWeights(BoneWeight a, BoneWeight b, float t)
+        {
+            if (t <= 1e-4f) return a;
+            if (t >= 0.9999f) return b;
+
+            float wA = 1f - t;
+            float wB = t;
+
+            BoneAccumulator accum = default;
+            accum.Add(a.boneIndex0, a.weight0 * wA);
+            accum.Add(a.boneIndex1, a.weight1 * wA);
+            accum.Add(a.boneIndex2, a.weight2 * wA);
+            accum.Add(a.boneIndex3, a.weight3 * wA);
+
+            accum.Add(b.boneIndex0, b.weight0 * wB);
+            accum.Add(b.boneIndex1, b.weight1 * wB);
+            accum.Add(b.boneIndex2, b.weight2 * wB);
+            accum.Add(b.boneIndex3, b.weight3 * wB);
+
+            return accum.ToNormalizedBoneWeight();
+        }
+
         private static void Collapse(
             List<Vector3> positions,
             List<byte> boneA,
@@ -402,7 +543,8 @@ namespace MeshLODGenerator
             int[] mirror = null,
             bool[] locked = null,
             List<Vector2> uvs = null,
-            List<Vector3> normals = null)
+            List<Vector3> normals = null,
+            List<BoneWeight> boneWeights = null)
         {
             int vertexCount = positions.Count;
             int triangleCount = indices.Count / 3;
@@ -553,14 +695,14 @@ namespace MeshLODGenerator
                 // Execute primary collapse
                 ExecuteMerge(va, vb, targetA, pos, quadrics, versions, boneA, boneB, weightA, hiddenFlag,
                              vertexTris, tris, triAlive, ref aliveTriangles, heap, neighborScratch, mergedTris,
-                             mirror, locked, uvs, normals);
+                             mirror, locked, uvs, normals, boneWeights);
 
                 // If paired, execute symmetric mirror collapse
                 if (isPaired && vertexTris[ma] != null && vertexTris[mb] != null)
                 {
                     ExecuteMerge(ma, mb, targetMA, pos, quadrics, versions, boneA, boneB, weightA, hiddenFlag,
                                  vertexTris, tris, triAlive, ref aliveTriangles, heap, neighborScratch, mergedTris,
-                                 mirror, locked, uvs, normals);
+                                 mirror, locked, uvs, normals, boneWeights);
 
                     mirror[va] = ma;
                     mirror[ma] = va;
@@ -598,7 +740,8 @@ namespace MeshLODGenerator
             List<byte> boneA, List<byte> boneB, List<byte> weightA, List<byte> hiddenFlag,
             List<int>[] vertexTris, int[] tris, bool[] triAlive, ref int aliveTriangles,
             List<HeapEntry> heap, HashSet<int> neighborScratch, List<int> mergedTris,
-            int[] mirror, bool[] locked, List<Vector2> uvs, List<Vector3> normals)
+            int[] mirror, bool[] locked, List<Vector2> uvs, List<Vector3> normals,
+            List<BoneWeight> boneWeights = null)
         {
             List<int> trisA = vertexTris[va];
             List<int> trisB = vertexTris[vb];
@@ -610,7 +753,29 @@ namespace MeshLODGenerator
             float edgeLenSq = (pos[va] - pos[vb]).sqrMagnitude;
             float edgeT = edgeLenSq > 1e-10f ? Mathf.Clamp01(Vector3.Dot(target - pos[va], pos[vb] - pos[va]) / edgeLenSq) : 0.5f;
 
-            if (keepB)
+            if (boneWeights != null && boneWeights.Count > vb && boneWeights.Count > va)
+            {
+                if (locked != null && locked[va])
+                {
+                    // Locked vertex keeps its weight
+                }
+                else if (locked != null && locked[vb])
+                {
+                    boneWeights[va] = boneWeights[vb];
+                }
+                else
+                {
+                    boneWeights[va] = BlendBoneWeights(boneWeights[va], boneWeights[vb], edgeT);
+                }
+
+                BoneWeight bw = boneWeights[va];
+                boneA[va] = (byte)Mathf.Clamp(bw.boneIndex0, 0, 255);
+                boneB[va] = (byte)Mathf.Clamp(bw.boneIndex1, 0, 255);
+                float sum2 = bw.weight0 + bw.weight1;
+                float norm = sum2 > 1e-6f ? bw.weight0 / sum2 : 1f;
+                weightA[va] = (byte)Mathf.Clamp(Mathf.RoundToInt(norm * 255f), 0, 255);
+            }
+            else if (keepB)
             {
                 boneA[va] = boneA[vb];
                 boneB[va] = boneB[vb];
@@ -935,7 +1100,8 @@ namespace MeshLODGenerator
             List<byte> hiddenFlag,
             List<int> indices,
             List<Vector2> uvs = null,
-            List<Vector3> normals = null)
+            List<Vector3> normals = null,
+            List<BoneWeight> boneWeights = null)
         {
             int[] remap = new int[positions.Count];
             for (int i = 0; i < remap.Length; i++) remap[i] = -1;
@@ -947,6 +1113,7 @@ namespace MeshLODGenerator
             List<byte> newHidden = new List<byte>(indices.Count);
             List<Vector2> newUvs = uvs != null ? new List<Vector2>(indices.Count) : null;
             List<Vector3> newNormals = normals != null ? new List<Vector3>(indices.Count) : null;
+            List<BoneWeight> newBoneWeights = boneWeights != null ? new List<BoneWeight>(indices.Count) : null;
 
             for (int i = 0; i < indices.Count; i++)
             {
@@ -961,6 +1128,7 @@ namespace MeshLODGenerator
                     newHidden.Add(hiddenFlag[old]);
                     if (uvs != null && old < uvs.Count) newUvs.Add(uvs[old]);
                     if (normals != null && old < normals.Count) newNormals.Add(normals[old]);
+                    if (boneWeights != null && old < boneWeights.Count) newBoneWeights.Add(boneWeights[old]);
                 }
                 indices[i] = remap[old];
             }
@@ -985,6 +1153,11 @@ namespace MeshLODGenerator
             {
                 normals.Clear();
                 normals.AddRange(newNormals);
+            }
+            if (boneWeights != null && newBoneWeights != null)
+            {
+                boneWeights.Clear();
+                boneWeights.AddRange(newBoneWeights);
             }
         }
     }
