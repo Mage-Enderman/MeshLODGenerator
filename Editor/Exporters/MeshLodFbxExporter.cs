@@ -124,6 +124,8 @@ namespace MeshLODGenerator
                 long vidId = 1000005;
                 long skinId = 1000006;
                 long poseId = 1000007;
+                long armatureId = 1000008;
+                long armatureAttrId = 1000009;
 
                 long boneModelBase = 2000000;
                 long boneAttrBase = 3000000;
@@ -175,6 +177,15 @@ namespace MeshLODGenerator
 
                 writer.EndNode(); // FBXHeaderExtension
 
+                // --- Top-level nodes required by Autodesk FBX SDK ---
+                writer.BeginNode("FileId");
+                writer.AddPropertyRawBytes(FileIdBytes);
+                writer.EndNode();
+
+                writer.WriteNodeString("CreationTime", "1970-01-01 10:00:00:000");
+
+                writer.WriteNodeString("Creator", "MeshLODGenerator");
+
                 // --- 2. GlobalSettings ---
                 writer.BeginNode("GlobalSettings");
                 writer.WriteNodeInt("Version", 1000);
@@ -212,12 +223,19 @@ namespace MeshLODGenerator
                 // --- 5. Definitions ---
                 writer.BeginNode("Definitions");
                 writer.WriteNodeInt("Version", 100);
-                int defCount = 4 + (isRigged ? 3 : 0) + (!string.IsNullOrEmpty(options.AlbedoTexturePath) ? 2 : 0);
-                writer.WriteNodeInt("Count", defCount);
+                int totalObjects = 1 /* GlobalSettings */
+                    + 1 /* Geometry */
+                    + (1 + (isRigged ? (numBones + 1) : 0)) /* Model (Mesh + Bones + Armature) */
+                    + 1 /* Material */
+                    + (!string.IsNullOrEmpty(options.AlbedoTexturePath) ? 2 : 0) /* Texture + Video */
+                    + (isRigged ? (numBones + 1) : 0) /* NodeAttribute (Bones + Armature) */
+                    + (isRigged ? (1 + numBones) : 0) /* Deformer (Skin + Clusters) */
+                    + (isRigged ? 1 : 0) /* Pose */;
+                writer.WriteNodeInt("Count", totalObjects);
 
                 WriteObjectTypeCount(writer, "GlobalSettings", 1);
                 WriteObjectTypeCount(writer, "Geometry", 1);
-                WriteObjectTypeCount(writer, "Model", 1 + (isRigged ? numBones : 0));
+                WriteObjectTypeCount(writer, "Model", 1 + (isRigged ? (numBones + 1) : 0));
                 WriteObjectTypeCount(writer, "Material", 1);
                 if (!string.IsNullOrEmpty(options.AlbedoTexturePath))
                 {
@@ -226,7 +244,7 @@ namespace MeshLODGenerator
                 }
                 if (isRigged)
                 {
-                    WriteObjectTypeCount(writer, "NodeAttribute", numBones);
+                    WriteObjectTypeCount(writer, "NodeAttribute", numBones + 1);
                     WriteObjectTypeCount(writer, "Deformer", 1 + numBones);
                     WriteObjectTypeCount(writer, "Pose", 1);
                 }
@@ -245,14 +263,14 @@ namespace MeshLODGenerator
                 writer.EndNode();
                 writer.WriteNodeInt("GeometryVersion", 124);
 
-                // Vertices (scale to cm, negate Z)
+                // Vertices (negate Z for right-handedness, in meters)
                 double[] vertCoords = new double[vertices.Length * 3];
                 for (int i = 0; i < vertices.Length; i++)
                 {
                     Vector3 v = vertices[i];
-                    vertCoords[i * 3 + 0] = v.x * 100.0;
-                    vertCoords[i * 3 + 1] = v.y * 100.0;
-                    vertCoords[i * 3 + 2] = -v.z * 100.0;
+                    vertCoords[i * 3 + 0] = v.x;
+                    vertCoords[i * 3 + 1] = v.y;
+                    vertCoords[i * 3 + 2] = -v.z;
                 }
                 writer.BeginNode("Vertices");
                 writer.AddPropertyDoubleArray(vertCoords);
@@ -428,6 +446,28 @@ namespace MeshLODGenerator
                 // 6c. Bones Model & NodeAttribute (if rigged)
                 if (isRigged)
                 {
+                    // Armature NodeAttribute & Model (encapsulates root bones)
+                    writer.BeginNode("NodeAttribute");
+                    writer.AddPropertyLong(armatureAttrId);
+                    writer.AddPropertyString("NodeAttribute::\0\x01NodeAttribute");
+                    writer.AddPropertyString("Null");
+                    writer.WriteNodeInt("Version", 100);
+                    writer.EndNode();
+
+                    writer.BeginNode("Model");
+                    writer.AddPropertyLong(armatureId);
+                    writer.AddPropertyString("Armature\0\x01Model");
+                    writer.AddPropertyString("Null");
+                    writer.WriteNodeInt("Version", 232);
+                    writer.BeginNode("Properties70");
+                    WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", 0.0, 0.0, 0.0);
+                    WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", 0.0, 0.0, 0.0);
+                    WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0);
+                    writer.EndNode();
+                    writer.WriteNodeBool("Shading", true);
+                    writer.WriteNodeString("Culling", "CullingOff");
+                    writer.EndNode(); // Model (Armature)
+
                     for (int b = 0; b < numBones; b++)
                     {
                         Transform bone = options.Bones[b];
@@ -479,7 +519,7 @@ namespace MeshLODGenerator
                         writer.AddPropertyString("LimbNode");
                         writer.WriteNodeInt("Version", 232);
                         writer.BeginNode("Properties70");
-                        WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", localPos.x * 100.0, localPos.y * 100.0, -localPos.z * 100.0);
+                        WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", localPos.x, localPos.y, -localPos.z);
                         WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", fbxEuler.x, fbxEuler.y, fbxEuler.z);
                         WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", localScale.x, localScale.y, localScale.z);
                         writer.EndNode();
@@ -681,6 +721,11 @@ namespace MeshLODGenerator
 
                 if (isRigged)
                 {
+                    // Armature NodeAttribute -> Armature Model
+                    writer.WriteConnection("OO", armatureAttrId, armatureId);
+                    // Armature Model -> Root
+                    writer.WriteConnection("OO", armatureId, 0);
+
                     // Skin -> Geometry
                     writer.WriteConnection("OO", skinId, geomId);
 
@@ -705,7 +750,7 @@ namespace MeshLODGenerator
                         }
                         else
                         {
-                            writer.WriteConnection("OO", bModel, 0);
+                            writer.WriteConnection("OO", bModel, armatureId);
                         }
                     }
                 }
@@ -744,10 +789,6 @@ namespace MeshLODGenerator
         {
             Matrix4x4 S = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
             Matrix4x4 flipped = S * m * S;
-            // Scale translation to cm
-            flipped.m03 *= 100f;
-            flipped.m13 *= 100f;
-            flipped.m23 *= 100f;
 
             double[] result = new double[16];
             for (int c = 0; c < 4; c++)
@@ -860,6 +901,11 @@ namespace MeshLODGenerator
             writer.AddPropertyDouble(b);
             writer.EndNode();
         }
+
+        private static readonly byte[] FileIdBytes = new byte[]
+        {
+            0x28, 0xB3, 0x2A, 0xEB, 0xB6, 0x24, 0xCC, 0xC2, 0xBF, 0xC8, 0xB0, 0x2A, 0xA9, 0x2B, 0xFC, 0xF1
+        };
 
         /// <summary>
         /// Helper for writing FBX 7.4 Binary format.
@@ -995,6 +1041,14 @@ namespace MeshLODGenerator
                 IncrementPropCount();
             }
 
+            public void AddPropertyRawBytes(byte[] bytes)
+            {
+                _writer.Write((byte)'R');
+                _writer.Write((uint)bytes.Length);
+                _writer.Write(bytes);
+                IncrementPropCount();
+            }
+
             public void AddPropertyDoubleArray(double[] array)
             {
                 _writer.Write((byte)'d');
@@ -1077,12 +1131,18 @@ namespace MeshLODGenerator
 
             public void Finish()
             {
-                // Top-level null record
+                // Top-level null record (13 zero bytes)
                 _writer.Write(new byte[13]);
 
-                // 164-byte FBX 7.4 binary footer
+                // FBX 7.4 binary footer with 16-byte alignment
                 _writer.Write(FooterMagic1);
-                _writer.Write(new byte[8]);
+                _writer.Write(new byte[4]);
+
+                long ofs = _stream.Position;
+                int pad = (int)(((ofs + 15) & ~15) - ofs);
+                if (pad == 0) pad = 16;
+                _writer.Write(new byte[pad]);
+
                 _writer.Write((uint)7400);
                 _writer.Write(new byte[120]);
                 _writer.Write(FooterMagic2);
