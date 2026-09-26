@@ -240,6 +240,12 @@
   </div>
 
   <script>
+    // Automatically trigger VCC protocol handler if user arrived via one-click link (?open_vcc=true)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('open_vcc')) {
+      window.location.href = "vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json";
+    }
+
     function copyRepoUrl() {
       const copyText = document.getElementById("repo-url");
       copyText.select();

@@ -1,6 +1,6 @@
 # Mesh LOD Generator ⚡
 
-[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json)
+[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](https://mage-enderman.github.io/MeshLODGenerator/?open_vcc=true)
 [![Listing](https://img.shields.io/badge/VPM%20Listing-Website-1f6feb?style=for-the-badge)](https://mage-enderman.github.io/MeshLODGenerator/)
 
 A standalone, non-destructive Mesh LOD Generator and Texture Atlas Baker for Unity. Supports **static meshes** and **rigged humanoid/creature characters** (`SkinnedMeshRenderer`) with zero external package dependencies.
@@ -47,7 +47,7 @@ Originally built on open-source foundations from [Basis Labs](https://github.com
 ### Option A: VRChat Creator Companion (VCC) - One-Click Add
 Click the badge below to add the repository directly to your VCC:
 
-[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json)
+[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](https://mage-enderman.github.io/MeshLODGenerator/?open_vcc=true)
 
 **Manual addition in VCC:**
 1. In VCC, open **Settings > Packages > Installed Repositories**.
