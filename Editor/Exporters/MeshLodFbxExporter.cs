@@ -196,7 +196,7 @@ namespace MeshLODGenerator
                 WritePropertyP(writer, "FrontAxisSign", "int", "Integer", "", 1);
                 WritePropertyP(writer, "CoordAxis", "int", "Integer", "", 0);
                 WritePropertyP(writer, "CoordAxisSign", "int", "Integer", "", 1);
-                WritePropertyP(writer, "OriginalUpAxis", "int", "Integer", "", 1);
+                WritePropertyP(writer, "OriginalUpAxis", "int", "Integer", "", -1);
                 WritePropertyP(writer, "OriginalUpAxisSign", "int", "Integer", "", 1);
                 WritePropertyP(writer, "UnitScaleFactor", "double", "Number", "", 100.0);
                 WritePropertyP(writer, "OriginalUnitScaleFactor", "double", "Number", "", 100.0);
@@ -263,20 +263,20 @@ namespace MeshLODGenerator
                 writer.EndNode();
                 writer.WriteNodeInt("GeometryVersion", 124);
 
-                // Vertices (negate Z for right-handedness, in meters)
+                // Vertices: in FBX/Blender root coordinate system (Z-up), rotated by [-90, -180, 0] at Model level
                 double[] vertCoords = new double[vertices.Length * 3];
                 for (int i = 0; i < vertices.Length; i++)
                 {
                     Vector3 v = vertices[i];
                     vertCoords[i * 3 + 0] = v.x;
-                    vertCoords[i * 3 + 1] = v.y;
-                    vertCoords[i * 3 + 2] = -v.z;
+                    vertCoords[i * 3 + 1] = v.z;
+                    vertCoords[i * 3 + 2] = v.y;
                 }
                 writer.BeginNode("Vertices");
                 writer.AddPropertyDoubleArray(vertCoords);
                 writer.EndNode();
 
-                // PolygonVertexIndex (handedness flip: a, b, ~c)
+                // PolygonVertexIndex (winding order matches standard FBX)
                 int[] polyIndices = new int[triangles.Length];
                 for (int i = 0; i < triangles.Length; i += 3)
                 {
@@ -288,7 +288,7 @@ namespace MeshLODGenerator
                 writer.AddPropertyIntArray(polyIndices);
                 writer.EndNode();
 
-                // Normals
+                // Normals (mapped to [x, z, y] to match vertex orientation)
                 double[] normCoords = new double[triangles.Length * 3];
                 for (int i = 0; i < triangles.Length; i += 3)
                 {
@@ -301,16 +301,16 @@ namespace MeshLODGenerator
                     Vector3 nc = normals[c];
 
                     normCoords[i * 3 + 0] = na.x;
-                    normCoords[i * 3 + 1] = na.y;
-                    normCoords[i * 3 + 2] = -na.z;
+                    normCoords[i * 3 + 1] = na.z;
+                    normCoords[i * 3 + 2] = na.y;
 
                     normCoords[i * 3 + 3] = nb.x;
-                    normCoords[i * 3 + 4] = nb.y;
-                    normCoords[i * 3 + 5] = -nb.z;
+                    normCoords[i * 3 + 4] = nb.z;
+                    normCoords[i * 3 + 5] = nb.y;
 
                     normCoords[i * 3 + 6] = nc.x;
-                    normCoords[i * 3 + 7] = nc.y;
-                    normCoords[i * 3 + 8] = -nc.z;
+                    normCoords[i * 3 + 7] = nc.z;
+                    normCoords[i * 3 + 8] = nc.y;
                 }
                 writer.BeginNode("LayerElementNormal");
                 writer.AddPropertyInt(0);
@@ -398,6 +398,7 @@ namespace MeshLODGenerator
                 writer.EndNode(); // Geometry
 
                 // 6b. Mesh Model
+                // 6b. Mesh Model
                 string nodeName = options.Name ?? "LOD_Mesh";
                 writer.BeginNode("Model");
                 writer.AddPropertyLong(modelId);
@@ -405,6 +406,9 @@ namespace MeshLODGenerator
                 writer.AddPropertyString("Mesh");
                 writer.WriteNodeInt("Version", 232);
                 writer.BeginNode("Properties70");
+                WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", 0.0, 0.0, 0.0);
+                WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", -90.0, -180.0, 0.0);
+                WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0);
                 WritePropertyP(writer, "InheritType", "enum", "", "", 1);
                 WritePropertyP(writer, "DefaultAttributeIndex", "int", "Integer", "", 0);
                 writer.EndNode();
@@ -461,12 +465,21 @@ namespace MeshLODGenerator
                     writer.WriteNodeInt("Version", 232);
                     writer.BeginNode("Properties70");
                     WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", 0.0, 0.0, 0.0);
-                    WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", 0.0, 0.0, 0.0);
+                    WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", -90.0, -180.0, 0.0);
                     WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", 1.0, 1.0, 1.0);
                     writer.EndNode();
                     writer.WriteNodeBool("Shading", true);
                     writer.WriteNodeString("Culling", "CullingOff");
                     writer.EndNode(); // Model (Armature)
+
+                    // Mesh world matrix in FBX space (rotated [-90, -180, 0])
+                    Matrix4x4 fbxMeshWorld = new Matrix4x4(
+                        new Vector4(-1f, 0f, 0f, 0f),
+                        new Vector4(0f, 0f, 1f, 0f),
+                        new Vector4(0f, 1f, 0f, 0f),
+                        new Vector4(0f, 0f, 0f, 1f)
+                    );
+                    Matrix4x4 fbxArmWorldInv = fbxMeshWorld.inverse;
 
                     for (int b = 0; b < numBones; b++)
                     {
@@ -474,43 +487,37 @@ namespace MeshLODGenerator
                         string bName = bone != null ? bone.name : $"Bone_{b}";
 
                         Vector3 localPos = Vector3.zero;
-                        Quaternion localRot = Quaternion.identity;
+                        Vector3 fbxEuler = Vector3.zero;
                         Vector3 localScale = Vector3.one;
 
-                        if (bone != null)
+                        int pIdx = parentBoneIndices[b];
+                        if (pIdx >= 0 && options.Bones[pIdx] != null)
                         {
-                            int pIdx = parentBoneIndices[b];
-                            if (pIdx >= 0 && options.Bones[pIdx] != null)
-                            {
-                                Matrix4x4 rel = options.Bones[pIdx].worldToLocalMatrix * bone.localToWorldMatrix;
-                                DecomposeMatrix(rel, out localPos, out localRot, out localScale);
-                            }
-                            else
-                            {
-                                Transform rootAnchor = options.RootTransform != null
-                                    ? options.RootTransform
-                                    : (options.TargetGameObject != null
-                                        ? options.TargetGameObject.transform
-                                        : (options.RootBone != null ? options.RootBone.root : null));
-                                if (rootAnchor != null)
-                                {
-                                    Matrix4x4 rel = rootAnchor.worldToLocalMatrix * bone.localToWorldMatrix;
-                                    DecomposeMatrix(rel, out localPos, out localRot, out localScale);
-                                }
-                                else
-                                {
-                                    localPos = bone.localPosition;
-                                    localRot = bone.localRotation;
-                                    localScale = bone.localScale;
-                                }
-                            }
-                        }
+                            // Child bone: local transform relative to parent bone
+                            Matrix4x4 rel = options.Bones[pIdx].worldToLocalMatrix * bone.localToWorldMatrix;
+                            DecomposeMatrix(rel, out localPos, out Quaternion localRot, out localScale);
 
-                        // Convert local rotation to FBX right-handed Euler XYZ
-                        Matrix4x4 rotM = Matrix4x4.Rotate(localRot);
-                        Matrix4x4 S = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
-                        Matrix4x4 fbxRotM = S * rotM * S;
-                        Vector3 fbxEuler = MatrixToEulerXYZ(fbxRotM);
+                            Matrix4x4 rotM = Matrix4x4.Rotate(localRot);
+                            Matrix4x4 S = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
+                            Matrix4x4 fbxRotM = S * rotM * S;
+                            fbxEuler = MatrixToEulerXYZ(fbxRotM);
+                            localPos.z = -localPos.z;
+                        }
+                        else
+                        {
+                            // Root bone: parented to Armature
+                            Matrix4x4 unityBindpose = (mesh.bindposes != null && b < mesh.bindposes.Length)
+                                ? mesh.bindposes[b]
+                                : Matrix4x4.identity;
+                            Matrix4x4 unityBoneWorld = (mesh.bindposes != null && b < mesh.bindposes.Length)
+                                ? unityBindpose.inverse
+                                : (bone != null ? bone.localToWorldMatrix : Matrix4x4.identity);
+
+                            Matrix4x4 fbxBoneWorld = GetFbxBoneWorldMatrix(unityBoneWorld);
+                            Matrix4x4 rootLocalMat = fbxArmWorldInv * fbxBoneWorld;
+                            DecomposeMatrix(rootLocalMat, out localPos, out Quaternion localRot, out localScale);
+                            fbxEuler = MatrixToEulerXYZ(Matrix4x4.Rotate(localRot));
+                        }
 
                         // Bone Model (LimbNode)
                         writer.BeginNode("Model");
@@ -519,7 +526,7 @@ namespace MeshLODGenerator
                         writer.AddPropertyString("LimbNode");
                         writer.WriteNodeInt("Version", 232);
                         writer.BeginNode("Properties70");
-                        WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", localPos.x, localPos.y, -localPos.z);
+                        WritePropertyPVector3D(writer, "Lcl Translation", "Lcl Translation", "", "A", localPos.x, localPos.y, localPos.z);
                         WritePropertyPVector3D(writer, "Lcl Rotation", "Lcl Rotation", "", "A", fbxEuler.x, fbxEuler.y, fbxEuler.z);
                         WritePropertyPVector3D(writer, "Lcl Scaling", "Lcl Scaling", "", "A", localScale.x, localScale.y, localScale.z);
                         writer.EndNode();
@@ -568,9 +575,6 @@ namespace MeshLODGenerator
                         AddWeight(bw.boneIndex3, bw.weight3, v, numBones, boneVertIndices, boneVertWeights);
                     }
 
-                    // Mesh bind world matrix
-                    double[] meshMatrix = GetFbxMatrix(Matrix4x4.identity);
-
                     // Clusters
                     for (int b = 0; b < numBones; b++)
                     {
@@ -581,9 +585,16 @@ namespace MeshLODGenerator
                             ? mesh.bindposes[b]
                             : Matrix4x4.identity;
 
-                        // boneWorld = meshWorld * bindpose^-1
-                        Matrix4x4 boneWorld = unityBindpose.inverse;
-                        double[] boneMatrix = GetFbxMatrix(boneWorld);
+                        Matrix4x4 unityBoneWorld = (mesh.bindposes != null && b < mesh.bindposes.Length)
+                            ? unityBindpose.inverse
+                            : (bone != null ? bone.localToWorldMatrix : Matrix4x4.identity);
+
+                        Matrix4x4 fbxBoneWorld = GetFbxBoneWorldMatrix(unityBoneWorld);
+                        double[] boneMatrix = Matrix4x4ToFbxArray(fbxBoneWorld);
+
+                        // Cluster Transform: bind pose in bone space (TransformLink^-1 * MeshWorld)
+                        Matrix4x4 clusterTransform = fbxBoneWorld.inverse * fbxMeshWorld;
+                        double[] clusterTransformArray = Matrix4x4ToFbxArray(clusterTransform);
 
                         writer.BeginNode("Deformer");
                         writer.AddPropertyLong(clusterBase + b);
@@ -605,7 +616,7 @@ namespace MeshLODGenerator
                         writer.EndNode();
 
                         writer.BeginNode("Transform");
-                        writer.AddPropertyDoubleArray(meshMatrix);
+                        writer.AddPropertyDoubleArray(clusterTransformArray);
                         writer.EndNode();
 
                         writer.BeginNode("TransformLink");
@@ -622,13 +633,23 @@ namespace MeshLODGenerator
                     writer.AddPropertyString("BindPose");
                     writer.WriteNodeString("Type", "BindPose");
                     writer.WriteNodeInt("Version", 100);
-                    writer.WriteNodeInt("NbPoseNodes", 1 + numBones);
+                    writer.WriteNodeInt("NbPoseNodes", 2 + numBones);
+
+                    double[] meshMatrixArray = Matrix4x4ToFbxArray(fbxMeshWorld);
 
                     // PoseNode for Mesh
                     writer.BeginNode("PoseNode");
                     writer.WriteNodeLong("Node", modelId);
                     writer.BeginNode("Matrix");
-                    writer.AddPropertyDoubleArray(meshMatrix);
+                    writer.AddPropertyDoubleArray(meshMatrixArray);
+                    writer.EndNode();
+                    writer.EndNode();
+
+                    // PoseNode for Armature
+                    writer.BeginNode("PoseNode");
+                    writer.WriteNodeLong("Node", armatureId);
+                    writer.BeginNode("Matrix");
+                    writer.AddPropertyDoubleArray(meshMatrixArray);
                     writer.EndNode();
                     writer.EndNode();
 
@@ -638,7 +659,11 @@ namespace MeshLODGenerator
                         Matrix4x4 unityBindpose = (mesh.bindposes != null && b < mesh.bindposes.Length)
                             ? mesh.bindposes[b]
                             : Matrix4x4.identity;
-                        double[] boneMatrix = GetFbxMatrix(unityBindpose.inverse);
+                        Matrix4x4 unityBoneWorld = (mesh.bindposes != null && b < mesh.bindposes.Length)
+                            ? unityBindpose.inverse
+                            : (options.Bones[b] != null ? options.Bones[b].localToWorldMatrix : Matrix4x4.identity);
+                        Matrix4x4 fbxBoneWorld = GetFbxBoneWorldMatrix(unityBoneWorld);
+                        double[] boneMatrix = Matrix4x4ToFbxArray(fbxBoneWorld);
 
                         writer.BeginNode("PoseNode");
                         writer.WriteNodeLong("Node", boneModelBase + b);
@@ -785,17 +810,21 @@ namespace MeshLODGenerator
             }
         }
 
-        private static double[] GetFbxMatrix(Matrix4x4 m)
+        private static Matrix4x4 GetFbxBoneWorldMatrix(Matrix4x4 unityBoneWorld)
         {
-            Matrix4x4 S = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
-            Matrix4x4 flipped = S * m * S;
+            Matrix4x4 sLeft = Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
+            Matrix4x4 sRight = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
+            return sLeft * unityBoneWorld * sRight;
+        }
 
+        private static double[] Matrix4x4ToFbxArray(Matrix4x4 m)
+        {
             double[] result = new double[16];
             for (int c = 0; c < 4; c++)
             {
                 for (int r = 0; r < 4; r++)
                 {
-                    result[c * 4 + r] = flipped[r, c];
+                    result[c * 4 + r] = m[r, c];
                 }
             }
             return result;
