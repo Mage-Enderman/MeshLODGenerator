@@ -1,0 +1,18 @@
+{
+  "name": "Mage-Enderman's Packages",
+  "id": "com.mageenderman.vpm",
+  "url": "https://mage-enderman.github.io/MeshLODGenerator/index.json",
+  "author": {
+    "name": "Mage-Enderman",
+    "url": "https://github.com/Mage-Enderman"
+  },
+  "description": "VPM repository for Mesh LOD Generator and tools by Mage-Enderman",
+  "infoLink": {
+    "url": "https://github.com/Mage-Enderman/MeshLODGenerator",
+    "text": "Mesh LOD Generator GitHub"
+  },
+  "githubRepos": [
+    "Mage-Enderman/MeshLODGenerator"
+  ],
+  "packages": {}
+}

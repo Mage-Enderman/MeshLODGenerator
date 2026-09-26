@@ -1,5 +1,8 @@
 # Mesh LOD Generator ⚡
 
+[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json)
+[![Listing](https://img.shields.io/badge/VPM%20Listing-Website-1f6feb?style=for-the-badge)](https://mage-enderman.github.io/MeshLODGenerator/)
+
 A standalone, non-destructive Mesh LOD Generator and Texture Atlas Baker for Unity. Supports **static meshes** and **rigged humanoid/creature characters** (`SkinnedMeshRenderer`) with zero external package dependencies.
 
 Originally built on open-source foundations from [Basis Labs](https://github.com/BasisVR) (`BasisVR/basis`) and extended with bilateral symmetry, per-material boundary seam locking, and standalone binary FBX & GLB exporters.
@@ -41,7 +44,22 @@ Originally built on open-source foundations from [Basis Labs](https://github.com
 
 ## 🚀 Installation
 
-### Option A: Unity Package Manager (Recommended)
+### Option A: VRChat Creator Companion (VCC) - One-Click Add
+Click the badge below to add the repository directly to your VCC:
+
+[![Add to VCC](https://img.shields.io/badge/VCC-Add%20to%20VCC-2ea043?style=for-the-badge&logo=vrchat&logoColor=white)](vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json)
+
+**Manual addition in VCC:**
+1. In VCC, open **Settings > Packages > Installed Repositories**.
+2. Click **Add Repository**.
+3. Paste the repository URL:
+   ```text
+   https://mage-enderman.github.io/MeshLODGenerator/index.json
+   ```
+4. Click **I Understand, Add Repository**.
+5. In your avatar/world project, click **Add** next to **Mesh LOD Generator**.
+
+### Option B: Unity Package Manager (UPM Git URL)
 1. In Unity, open **Window > Package Manager**.
 2. Click the **`+`** icon in the top-left corner and select **Add package from git URL...**
 3. Paste:
@@ -49,10 +67,10 @@ Originally built on open-source foundations from [Basis Labs](https://github.com
    https://github.com/Mage-Enderman/MeshLODGenerator.git
    ```
 
-### Option B: `.unitypackage`
+### Option C: `.unitypackage`
 Download the latest `.unitypackage` from the [Releases](https://github.com/Mage-Enderman/MeshLODGenerator/releases) tab and drag it into your Unity project.
 
-### Option C: Manual Copy
+### Option D: Manual Copy
 Download or clone this repository and place the folder into your project's `Assets/` directory.
 
 ---

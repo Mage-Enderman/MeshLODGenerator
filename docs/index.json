@@ -1,0 +1,40 @@
+{
+  "name": "Mage-Enderman's Packages",
+  "id": "com.mageenderman.vpm",
+  "url": "https://mage-enderman.github.io/MeshLODGenerator/index.json",
+  "author": "Mage-Enderman",
+  "description": "VPM repository for Mesh LOD Generator and tools by Mage-Enderman",
+  "infoLink": {
+    "url": "https://github.com/Mage-Enderman/MeshLODGenerator",
+    "text": "GitHub Repository"
+  },
+  "packages": {
+    "com.mageenderman.meshlodgenerator": {
+      "versions": {
+        "1.0.0": {
+          "name": "com.mageenderman.meshlodgenerator",
+          "version": "1.0.0",
+          "displayName": "Mesh LOD Generator",
+          "description": "Standalone, non-destructive mesh LOD generator with bilateral symmetry, per-material decimation, occlusion culling, and texture atlasing.",
+          "unity": "2022.3",
+          "author": {
+            "name": "Mage-Enderman",
+            "url": "https://github.com/Mage-Enderman"
+          },
+          "keywords": [
+            "lod",
+            "mesh",
+            "decimation",
+            "simplifier",
+            "symmetry",
+            "atlas",
+            "baker",
+            "avatar"
+          ],
+          "url": "https://github.com/Mage-Enderman/MeshLODGenerator/releases/download/v1.0.0/com.mageenderman.meshlodgenerator-1.0.0.zip",
+          "repo": "https://mage-enderman.github.io/MeshLODGenerator/index.json"
+        }
+      }
+    }
+  }
+}

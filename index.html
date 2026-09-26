@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mage-Enderman's VPM Repository | Mesh LOD Generator</title>
+  <meta name="description" content="VRChat Creator Companion (VCC) repository listing for Mesh LOD Generator and tools by Mage-Enderman.">
+  <link rel="icon" href="https://vrchat.com/favicon.ico">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --accent: #1f6feb;
+      --accent-hover: #388bfd;
+      --vcc-green: #2ea043;
+      --vcc-green-hover: #3fb950;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --code-bg: #0b0e14;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      color: var(--text-bright);
+      font-size: 2.2rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+    }
+    header p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    .cta-section {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+    .btn-vcc {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      background: var(--vcc-green);
+      color: white;
+      text-decoration: none;
+      font-size: 1.25rem;
+      font-weight: 600;
+      padding: 0.9rem 2.2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(46, 160, 67, 0.35);
+      transition: all 0.2s ease;
+    }
+    .btn-vcc:hover {
+      background: var(--vcc-green-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(46, 160, 67, 0.45);
+    }
+    .copy-box {
+      margin-top: 1.5rem;
+      display: flex;
+      gap: 0.5rem;
+      background: var(--code-bg);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .copy-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-bright);
+      font-family: monospace;
+      font-size: 0.95rem;
+      outline: none;
+    }
+    .copy-box button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 0.4rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .copy-box button:hover {
+      background: var(--accent-hover);
+    }
+    h2 {
+      color: var(--text-bright);
+      font-size: 1.4rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    ol {
+      padding-left: 1.5rem;
+      color: var(--text);
+    }
+    li {
+      margin-bottom: 0.5rem;
+    }
+    .package-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.5rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 20px;
+      background: rgba(31, 111, 235, 0.2);
+      color: var(--accent-hover);
+      border: 1px solid var(--accent);
+    }
+    .features-list {
+      list-style-type: none;
+      padding-left: 0;
+      margin-top: 1rem;
+    }
+    .features-list li::before {
+      content: "✔ ";
+      color: var(--vcc-green);
+      font-weight: bold;
+    }
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    footer a {
+      color: var(--accent-hover);
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>⚡ Mage-Enderman's Packages</h1>
+      <p>Official VPM Listing for VRChat Creator Companion</p>
+    </header>
+
+    <div class="card">
+      <h2>Install via VRChat Creator Companion</h2>
+      <div class="cta-section">
+        <a id="vcc-button" class="btn-vcc" href="vcc://vpm/addRepo?url=https%3A%2F%2Fmage-enderman.github.io%2FMeshLODGenerator%2Findex.json">
+          ➕ Add to VCC
+        </a>
+      </div>
+
+      <p style="text-align: center; color: var(--text-muted); font-size: 0.9rem;">
+        Clicking the button will open VCC and prompt you to add this repository.
+      </p>
+
+      <div class="copy-box">
+        <input type="text" id="repo-url" value="https://mage-enderman.github.io/MeshLODGenerator/index.json" readonly />
+        <button id="copy-btn" onclick="copyRepoUrl()">Copy URL</button>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <h3 style="color: var(--text-bright); font-size: 1.1rem; margin-bottom: 0.5rem;">Manual Installation Steps:</h3>
+        <ol>
+          <li>Open the <strong>VRChat Creator Companion</strong>.</li>
+          <li>Go to <strong>Settings</strong> &gt; <strong>Packages</strong> &gt; <strong>Installed Repositories</strong>.</li>
+          <li>Click <strong>Add Repository</strong>.</li>
+          <li>Paste the repository URL copied above and click <strong>Add</strong>.</li>
+          <li>Confirm with <strong>I Understand, Add Repository</strong>.</li>
+          <li>Open your avatar or world project in VCC and click <strong>Add</strong> next to <strong>Mesh LOD Generator</strong>.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="package-header">
+        <h2 style="border: none; margin: 0; padding: 0;">Mesh LOD Generator</h2>
+        <span class="badge">v1.0.0</span>
+      </div>
+      <p style="color: var(--text-muted); margin-bottom: 1rem;">
+        <code>com.mageenderman.meshlodgenerator</code> • Requires Unity 2022.3+
+      </p>
+      <p>
+        A standalone, non-destructive mesh LOD generator with bilateral symmetry, per-material decimation, occlusion culling, texture atlasing, and native binary FBX/GLB exporters.
+      </p>
+      <ul class="features-list">
+        <li><strong>Universal Support</strong>: Works on static meshes and skinned humanoids/creatures with zero external dependencies.</li>
+        <li><strong>Bilateral Symmetry</strong>: Perfect left/right mirrored topology with centerline constraints.</li>
+        <li><strong>Watertight Seam Locking</strong>: Multi-material separation with zero mesh cracking or tearing.</li>
+        <li><strong>Occlusion Culling</strong>: Raycast interior culling strips hidden geometry under clothing.</li>
+        <li><strong>Texture Atlasing & Baking</strong>: Multi-pass orthographic texture baking with AO and seam dilation.</li>
+        <li><strong>Zero Dependencies</strong>: Built-in binary FBX & GLB exporters—no FBX SDK or external plugins required.</li>
+      </ul>
+    </div>
+
+    <footer>
+      <p>Maintained by <a href="https://github.com/Mage-Enderman" target="_blank" rel="noopener">Mage-Enderman</a> • <a href="https://github.com/Mage-Enderman/MeshLODGenerator" target="_blank" rel="noopener">GitHub Repository</a></p>
+    </footer>
+  </div>
+
+  <script>
+    function copyRepoUrl() {
+      const copyText = document.getElementById("repo-url");
+      copyText.select();
+      copyText.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(copyText.value).then(() => {
+        const btn = document.getElementById("copy-btn");
+        const orig = btn.innerText;
+        btn.innerText = "Copied! ✓";
+        btn.style.background = "var(--vcc-green)";
+        setTimeout(() => {
+          btn.innerText = orig;
+          btn.style.background = "";
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
