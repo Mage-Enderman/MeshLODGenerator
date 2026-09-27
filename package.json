@@ -1,6 +1,6 @@
 {
   "name": "com.mageenderman.meshlodgenerator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "Mesh LOD Generator",
   "description": "Standalone, non-destructive mesh LOD generator with bilateral symmetry, per-material decimation, occlusion culling, and texture atlasing.",
   "unity": "2022.3",
