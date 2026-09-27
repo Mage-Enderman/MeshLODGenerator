@@ -34,7 +34,9 @@ namespace MeshLODGenerator
             bool[] lockedVertices = null,
             List<Vector2> uvs = null,
             List<Vector3> normals = null,
-            List<BoneWeight> boneWeights = null)
+            List<BoneWeight> boneWeights = null,
+            int[] vertexMaterials = null,
+            Dictionary<int, MaterialSymmetryInfo> materialSymmetryReport = null)
         {
             if (positions == null || positions.Count == 0 || indices == null || indices.Count < 3)
             {
@@ -74,11 +76,20 @@ namespace MeshLODGenerator
             int[] mirrorMap = null;
             if (symmetric)
             {
-                mirrorMap = FindSymmetryPairs(positions, symmetryTolerance, out float symmetryRatio);
-                if (symmetryRatio < 0.70f)
+                if (vertexMaterials != null && vertexMaterials.Length == positions.Count)
                 {
-                    // Mesh is not predominantly symmetric; fall back gracefully to standard decimation
-                    mirrorMap = null;
+                    mirrorMap = FindSymmetryPairsPerMaterial(positions, vertexMaterials, symmetryTolerance, out var matReports, out _);
+                    if (materialSymmetryReport != null)
+                    {
+                        foreach (var kvp in matReports)
+                        {
+                            materialSymmetryReport[kvp.Key] = kvp.Value;
+                        }
+                    }
+                }
+                else
+                {
+                    mirrorMap = FindSymmetryPairs(positions, symmetryTolerance, out float symmetryRatio);
                 }
             }
 
@@ -107,6 +118,188 @@ namespace MeshLODGenerator
             {
                 hiddenFlag.Clear();
             }
+        }
+
+        public struct MaterialSymmetryInfo
+        {
+            public int MaterialIndex;
+            public int TotalVertices;
+            public int CenterlineVertices;
+            public int PairedVertices;
+            public int AsymmetricVertices;
+            public float SymmetryRatio;
+
+            public override string ToString()
+            {
+                if (SymmetryRatio >= 0.95f)
+                    return $"{SymmetryRatio * 100f:F1}% Symmetrical (Fully Symmetrical Decimation)";
+                else if (SymmetryRatio > 0.05f)
+                    return $"{SymmetryRatio * 100f:F1}% Symmetrical (Symmetric portions paired, {(1f - SymmetryRatio) * 100f:F1}% asymmetric vertices collapsed independently)";
+                else
+                    return $"{SymmetryRatio * 100f:F1}% Symmetrical (Asymmetrical Decimation)";
+            }
+        }
+
+        /// <summary>
+        /// Detects bilateral symmetry on a per-material basis across X=0.
+        /// Vertices within a material are only paired with vertices of the SAME material.
+        /// </summary>
+        public static int[] FindSymmetryPairsPerMaterial(
+            List<Vector3> positions,
+            int[] vertexMaterials,
+            float tolerance,
+            out Dictionary<int, MaterialSymmetryInfo> materialReports,
+            out float overallSymmetryRatio)
+        {
+            int count = positions.Count;
+            int[] mirror = new int[count];
+            for (int i = 0; i < count; i++) mirror[i] = -1;
+
+            materialReports = new Dictionary<int, MaterialSymmetryInfo>();
+
+            if (count == 0)
+            {
+                overallSymmetryRatio = 0f;
+                return mirror;
+            }
+
+            if (vertexMaterials == null || vertexMaterials.Length != count)
+            {
+                mirror = FindSymmetryPairs(positions, tolerance, out overallSymmetryRatio);
+                return mirror;
+            }
+
+            float tol = Mathf.Max(tolerance, 1e-5f);
+            float tolSq = tol * tol;
+            float cell = tol * 2f;
+            float invCell = 1f / cell;
+
+            // Group vertex indices by material
+            Dictionary<int, List<int>> matToVertices = new Dictionary<int, List<int>>();
+            for (int i = 0; i < count; i++)
+            {
+                int mat = vertexMaterials[i];
+                if (!matToVertices.TryGetValue(mat, out var vList))
+                {
+                    vList = new List<int>();
+                    matToVertices[mat] = vList;
+                }
+                vList.Add(i);
+            }
+
+            int totalCenterCount = 0;
+            int totalPairedCount = 0;
+
+            // Analyze each material independently
+            foreach (var kvp in matToVertices)
+            {
+                int matId = kvp.Key;
+                List<int> vIndices = kvp.Value;
+                int matVertexCount = vIndices.Count;
+
+                int matCenterCount = 0;
+                int matPairedCount = 0;
+
+                // 1. Centerline vertices within this material (|x| <= tol)
+                for (int idx = 0; idx < matVertexCount; idx++)
+                {
+                    int i = vIndices[idx];
+                    if (Mathf.Abs(positions[i].x) <= tol)
+                    {
+                        mirror[i] = i;
+                        matCenterCount++;
+                    }
+                }
+
+                // 2. Spatial grid for negative side vertices within this material (x < -tol)
+                Dictionary<Vector3Int, List<int>> negativeGrid = new Dictionary<Vector3Int, List<int>>(matVertexCount / 2 + 16);
+                for (int idx = 0; idx < matVertexCount; idx++)
+                {
+                    int i = vIndices[idx];
+                    if (positions[i].x < -tol)
+                    {
+                        Vector3 v = positions[i];
+                        Vector3Int key = new Vector3Int(
+                            Mathf.RoundToInt(v.x * invCell),
+                            Mathf.RoundToInt(v.y * invCell),
+                            Mathf.RoundToInt(v.z * invCell)
+                        );
+                        if (!negativeGrid.TryGetValue(key, out var list))
+                        {
+                            list = new List<int>(4);
+                            negativeGrid[key] = list;
+                        }
+                        list.Add(i);
+                    }
+                }
+
+                // 3. Match positive vertices (x > tol) to negative vertices within this material
+                for (int idx = 0; idx < matVertexCount; idx++)
+                {
+                    int i = vIndices[idx];
+                    if (positions[i].x > tol)
+                    {
+                        Vector3 pos = positions[i];
+                        Vector3 mirrorPos = new Vector3(-pos.x, pos.y, pos.z);
+                        int kx = Mathf.RoundToInt(mirrorPos.x * invCell);
+                        int ky = Mathf.RoundToInt(mirrorPos.y * invCell);
+                        int kz = Mathf.RoundToInt(mirrorPos.z * invCell);
+
+                        int bestJ = -1;
+                        float bestDistSq = tolSq;
+
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            for (int dy = -1; dy <= 1; dy++)
+                            {
+                                for (int dz = -1; dz <= 1; dz++)
+                                {
+                                    Vector3Int key = new Vector3Int(kx + dx, ky + dy, kz + dz);
+                                    if (negativeGrid.TryGetValue(key, out var candidates))
+                                    {
+                                        for (int c = 0; c < candidates.Count; c++)
+                                        {
+                                            int j = candidates[c];
+                                            if (mirror[j] != -1) continue;
+                                            float dSq = (positions[j] - mirrorPos).sqrMagnitude;
+                                            if (dSq < bestDistSq)
+                                            {
+                                                bestDistSq = dSq;
+                                                bestJ = j;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (bestJ != -1)
+                        {
+                            mirror[i] = bestJ;
+                            mirror[bestJ] = i;
+                            matPairedCount += 2;
+                        }
+                    }
+                }
+
+                float matRatio = matVertexCount > 0 ? (float)(matCenterCount + matPairedCount) / matVertexCount : 0f;
+                MaterialSymmetryInfo info = new MaterialSymmetryInfo
+                {
+                    MaterialIndex = matId,
+                    TotalVertices = matVertexCount,
+                    CenterlineVertices = matCenterCount,
+                    PairedVertices = matPairedCount,
+                    AsymmetricVertices = matVertexCount - (matCenterCount + matPairedCount),
+                    SymmetryRatio = matRatio
+                };
+                materialReports[matId] = info;
+
+                totalCenterCount += matCenterCount;
+                totalPairedCount += matPairedCount;
+            }
+
+            overallSymmetryRatio = (float)(totalCenterCount + totalPairedCount) / count;
+            return mirror;
         }
 
         /// <summary>

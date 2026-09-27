@@ -63,6 +63,7 @@ namespace MeshLODGenerator
             public int RendererCount;
             public bool IsRigged;
             public bool IsHumanoid;
+            public readonly List<string> MaterialSymmetryReports = new List<string>();
         }
 
         public class MeshLodResult
@@ -253,11 +254,30 @@ namespace MeshLODGenerator
                 if (settings.SeparateByMaterial && soup.Materials.Count > 1)
                 {
                     EditorUtility.DisplayProgressBar("Mesh LOD Generator", $"Simplifying mesh by material to {targetTris} triangles...", 0.40f);
-                    submeshTris = SimplifyByMaterial(soup, hiddenFlags, targetTris, settings);
+                    submeshTris = SimplifyByMaterial(soup, hiddenFlags, targetTris, settings, report);
                 }
                 else
                 {
                     EditorUtility.DisplayProgressBar("Mesh LOD Generator", $"Simplifying mesh to {targetTris} triangles...", 0.40f);
+
+                    int[] vertexMaterials = null;
+                    if (soup.TriangleMaterials.Count > 0 && soup.Indices.Count > 0)
+                    {
+                        vertexMaterials = new int[soup.Positions.Count];
+                        for (int t = 0; t < soup.TriangleMaterials.Count; t++)
+                        {
+                            int mat = soup.TriangleMaterials[t];
+                            int baseIdx = t * 3;
+                            if (baseIdx + 2 < soup.Indices.Count)
+                            {
+                                vertexMaterials[soup.Indices[baseIdx]] = mat;
+                                vertexMaterials[soup.Indices[baseIdx + 1]] = mat;
+                                vertexMaterials[soup.Indices[baseIdx + 2]] = mat;
+                            }
+                        }
+                    }
+
+                    var matSymReports = new Dictionary<int, MeshLodMeshSimplifier.MaterialSymmetryInfo>();
                     MeshLodMeshSimplifier.Simplify(
                         soup.Positions, soup.BoneA, soup.BoneB, soup.WeightA, hiddenFlags, soup.Indices, targetTris,
                         symmetric: settings.EnableSymmetricDecimation,
@@ -265,8 +285,25 @@ namespace MeshLODGenerator
                         lockedVertices: null,
                         uvs: soup.UVs,
                         normals: soup.Normals,
-                        boneWeights: soup.BoneWeights.Count > 0 ? soup.BoneWeights : null
+                        boneWeights: soup.BoneWeights.Count > 0 ? soup.BoneWeights : null,
+                        vertexMaterials: vertexMaterials,
+                        materialSymmetryReport: matSymReports
                     );
+
+                    if (settings.EnableSymmetricDecimation && matSymReports.Count > 0)
+                    {
+                        Debug.Log("[MeshLodGenerator] Material Symmetry Breakdown:");
+                        foreach (var kvp in matSymReports)
+                        {
+                            int matIdx = kvp.Key;
+                            string matName = (matIdx >= 0 && matIdx < soup.Materials.Count && soup.Materials[matIdx] != null) 
+                                ? soup.Materials[matIdx].name 
+                                : $"Material_{matIdx}";
+                            string line = $"  • [{matName}]: {kvp.Value}";
+                            Debug.Log(line);
+                            report.MaterialSymmetryReports.Add($"[{matName}] {kvp.Value}");
+                        }
+                    }
                 }
 
                 if (soup.Positions.Count == 0 || soup.Indices.Count < 3)
@@ -1047,7 +1084,8 @@ namespace MeshLODGenerator
             GeometrySoup soup,
             List<byte> hiddenFlags,
             int targetTris,
-            GenerationSettings settings)
+            GenerationSettings settings,
+            GenerationReport report = null)
         {
             int matCount = soup.Materials.Count;
             List<int>[] groupTris = new List<int>[matCount];
@@ -1143,7 +1181,14 @@ namespace MeshLODGenerator
                 if (settings.EnableSymmetricDecimation)
                 {
                     MeshLodMeshSimplifier.FindSymmetryPairs(subPos, settings.SymmetryTolerance, out float symRatio);
-                    groupSym = symRatio >= 0.70f;
+                    groupSym = symRatio > 0.05f;
+
+                    string matName = (m < soup.Materials.Count && soup.Materials[m] != null) ? soup.Materials[m].name : $"Material_{m}";
+                    string symDesc = symRatio >= 0.95f ? $"{symRatio * 100f:F1}% Symmetrical (Fully Symmetrical Decimation)"
+                        : (symRatio > 0.05f ? $"{symRatio * 100f:F1}% Symmetrical (Symmetric portions paired, {(1f - symRatio) * 100f:F1}% asymmetric vertices collapsed independently)"
+                        : $"{symRatio * 100f:F1}% Symmetrical (Asymmetrical Decimation)");
+                    Debug.Log($"[MeshLodGenerator] Material [{matName}]: {symDesc}");
+                    report?.MaterialSymmetryReports.Add($"[{matName}] {symDesc}");
                 }
 
                 MeshLodMeshSimplifier.Simplify(

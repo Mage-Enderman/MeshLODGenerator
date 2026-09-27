@@ -403,6 +403,17 @@ namespace MeshLODGenerator
             EditorGUILayout.LabelField("Skinning", _result.IsRigged ? $"Rigged ({_result.Bones?.Length ?? 0} bones)" : "Static Mesh");
             Bounds b = _result.LodMesh.bounds;
             EditorGUILayout.LabelField("Mesh Bounds", $"Size: ({b.size.x:0.00}, {b.size.y:0.00}, {b.size.z:0.00})m");
+
+            if (rep.MaterialSymmetryReports != null && rep.MaterialSymmetryReports.Count > 0)
+            {
+                EditorGUILayout.Space(4);
+                EditorGUILayout.LabelField("Material Symmetry:", EditorStyles.boldLabel);
+                foreach (string line in rep.MaterialSymmetryReports)
+                {
+                    EditorGUILayout.LabelField("  • " + line, EditorStyles.miniLabel);
+                }
+            }
+
             MeshLodUI.EndCard();
         }
 
